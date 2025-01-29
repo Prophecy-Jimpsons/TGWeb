@@ -14,7 +14,7 @@
             --highlight-color: rgba(36, 129, 204, 0.3);
             --win-highlight: rgba(76, 175, 80, 0.3);
         }
-
+    
         body {
             background-color: var(--tg-theme-bg-color);
             color: var(--tg-theme-text-color);
@@ -30,14 +30,14 @@
             -webkit-user-select: none;
             user-select: none;
         }
-
+    
         .game-info {
             text-align: center;
             margin-bottom: 20px;
             width: 100%;
             max-width: 400px;
         }
-
+    
         .phase-indicator {
             font-size: 16px;
             color: var(--tg-theme-button-color);
@@ -46,13 +46,13 @@
             border-radius: 8px;
             background: rgba(36, 129, 204, 0.1);
         }
-
+    
         .pieces-count {
             font-size: 14px;
             margin: 10px 0;
             font-weight: bold;
         }
-
+    
         .game-board {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -65,7 +65,7 @@
             border-radius: 10px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-
+    
         .cell {
             aspect-ratio: 1;
             border: 2px solid var(--tg-theme-button-color);
@@ -80,23 +80,30 @@
             border-radius: 8px;
             -webkit-tap-highlight-color: transparent;
         }
-
+    
         .cell:active {
             background-color: rgba(36, 129, 204, 0.1);
             transform: scale(0.95);
         }
-
+    
+        .cell:hover:not(:disabled) {
+            background-color: var(--highlight-color);
+            transform: translateY(-2px);
+        }
+    
         .cell.selected {
             background-color: var(--highlight-color);
             border-color: var(--tg-theme-button-color);
             transform: scale(1.05);
+            animation: pulse 1.5s infinite;
         }
-
+    
         .cell.last-move {
             border-color: #4CAF50;
             border-width: 3px;
+            animation: bounce 0.5s ease-in-out;
         }
-
+    
         .status {
             margin: 20px 0;
             font-size: 18px;
@@ -107,13 +114,13 @@
             width: 100%;
             text-align: center;
         }
-
+    
         .button-container {
             display: flex;
             gap: 15px;
             margin-top: 20px;
         }
-
+    
         .main-button {
             background: var(--tg-theme-button-color);
             color: var(--tg-theme-button-text-color);
@@ -127,17 +134,72 @@
             min-width: 120px;
             -webkit-tap-highlight-color: transparent;
         }
-
+    
         .main-button:active {
             transform: scale(0.95);
             opacity: 0.8;
         }
-
+    
+        .main-button:hover {
+            transform: translateY(-2px);
+            opacity: 0.9;
+        }
+    
         .winner {
             color: #4CAF50;
             font-weight: bold;
+            animation: bounce 1s ease-in-out;
+        }
+    
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(0.95); }
+        }
+    
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+    
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --tg-theme-bg-color: #1a1a1a;
+                --tg-theme-text-color: #ffffff;
+                --tg-theme-button-color: #3b82f6;
+                --highlight-color: rgba(59, 130, 246, 0.3);
+            }
+        }
+    
+        @media (max-width: 640px) {
+            .game-board {
+                gap: 4px;
+                padding: 8px;
+            }
+    
+            .cell {
+                font-size: 20px;
+            }
+    
+            .status {
+                font-size: 16px;
+            }
+    
+            .main-button {
+                padding: 10px 20px;
+                font-size: 14px;
+            }
+    
+            .phase-indicator {
+                font-size: 14px;
+            }
         }
     </style>
+    
 </head>
 <body>
     <div class="game-info">
