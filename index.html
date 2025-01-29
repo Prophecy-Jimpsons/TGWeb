@@ -451,86 +451,84 @@
         }
     }
     
-        async function handleCellClick(event) {
-            gameState.lastActivityTime = Date.now();
-        if (!gameState.mySymbol || isProcessingMove || gameState.gameEnded || gameState.currentPlayer !== gameState.mySymbol) return;
-        console.log('Processing move:', {
-            currentPlayer: gameState.currentPlayer,
-            mySymbol: gameState.mySymbol,
-            phase: gameState.phase
-        });
-
+    async function handleCellClick(event) {
+    // Early validation
+            if (!isValidMove()) return;
             
             const row = parseInt(event.target.dataset.row);
             const col = parseInt(event.target.dataset.col);
             
-            if (gameState.phase === 'placement') {
-                if (gameState.pieces[gameState.mySymbol] >= 4) return;
-                if (gameState.board[row][col] !== '') return;
+            // State guard
+            if (isProcessingMove) {
+                console.log('Move already in progress');
+                return;
+            }
+            
+            try {
+                isProcessingMove = true;
                 
-                // Update locally first
+                if (gameState.phase === 'placement') {
+                    await handlePlacementPhase(row, col);
+                } else {
+                    await handleMovementPhase(row, col);
+                }
+            } catch (error) {
+                console.error('Move failed:', error);
+                revertMove(row, col);
+            } finally {
+                isProcessingMove = false;
+            }
+        }
+
+        function isValidMove() {
+            return (
+                gameState.mySymbol && 
+                !gameState.gameEnded && 
+                gameState.currentPlayer === gameState.mySymbol &&
+                !isProcessingMove
+            );
+        }
+
+        async function handlePlacementPhase(row, col) {
+            if (gameState.pieces[gameState.mySymbol] >= 4 || 
+                gameState.board[row][col] !== '') {
+                return;
+            }
+            
+            const previousState = {...gameState.board[row]};
+            
+            try {
                 gameState.board[row][col] = gameState.mySymbol;
                 updateBoard();
                 
-                // Then send to server
-                isProcessingMove = true;
-                try {
-                    const success = await makeMove(row, col);
-                    if (!success) {
-                        // Revert if server rejected
-                        gameState.board[row][col] = '';
-                        updateBoard();
-                    }
-                } catch (error) {
-                    gameState.board[row][col] = '';
-                    updateBoard();
-                    console.error('Move failed:', error);
-                } finally {
-                    isProcessingMove = false;
+                const success = await makeMove(row, col);
+                if (!success) {
+                    revertMove(row, col, previousState);
                 }
-            } else {
-                if (gameState.selectedPiece) {
-                    if (row === gameState.selectedPiece.row && col === gameState.selectedPiece.col) {
-                        gameState.selectedPiece = null;
-                        updateBoard();
-                        return;
-                    }
-                    if (gameState.board[row][col] === '') {
-                        const oldRow = gameState.selectedPiece.row;
-                        const oldCol = gameState.selectedPiece.col;
-                        
-                        // Update locally first
-                        gameState.board[oldRow][oldCol] = '';
-                        gameState.board[row][col] = gameState.mySymbol;
-                        updateBoard();
-                        
-                        // Then send to server
-                        isProcessingMove = true;
-                        try {
-                            const success = await makeMove(row, col, gameState.selectedPiece);
-                            if (!success) {
-                                // Revert if server rejected
-                                gameState.board[oldRow][oldCol] = gameState.mySymbol;
-                                gameState.board[row][col] = '';
-                                updateBoard();
-                            }
-                        } catch (error) {
-                            gameState.board[oldRow][oldCol] = gameState.mySymbol;
-                            gameState.board[row][col] = '';
-                            updateBoard();
-                            console.error('Move failed:', error);
-                        } finally {
-                            isProcessingMove = false;
-                        }
-                    }
-                } else {
-                    if (gameState.board[row][col] === gameState.mySymbol) {
-                        gameState.selectedPiece = {row, col};
-                        updateBoard();
-                    }
-                }
+            } catch (error) {
+                revertMove(row, col, previousState);
+                throw error;
             }
         }
+
+        async function handleMovementPhase(row, col) {
+            if (!gameState.selectedPiece && 
+                gameState.board[row][col] === gameState.mySymbol) {
+                gameState.selectedPiece = {row, col};
+                updateBoard();
+                return;
+            }
+            
+            if (gameState.selectedPiece) {
+                await processMovement(row, col);
+            }
+        }
+
+        function revertMove(row, col, previousState = '') {
+            gameState.board[row][col] = previousState;
+            updateBoard();
+        }
+
         
     
         async function makeMove(row, col, selectedPiece = null) {
