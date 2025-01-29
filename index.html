@@ -584,36 +584,39 @@
         }
 
         isValidMove(row, col) {
-          // First check basic validity
+          // First check if it's player's turn
           if (!this.isValidTurn()) return false;
 
           if (this.state.phase === "movement") {
-            // If selecting a piece
+            // If no piece is selected and clicking own piece, allow selection of ANY of your pieces
             if (!this.state.selectedPiece) {
               return this.state.board[row][col] === this.state.mySymbol;
             }
 
-            // If moving to a new position
+            // If a piece is selected, validate the move:
+            // 1. Must move to an adjacent empty tile
+            // 2. Can move in any direction (horizontal, vertical, or diagonal)
             const { row: fromRow, col: fromCol } = this.state.selectedPiece;
             const rowDiff = Math.abs(row - fromRow);
             const colDiff = Math.abs(col - fromCol);
 
-            // Validate the move is:
-            // 1. One space at a time
-            // 2. Target space is empty
-            // 3. Within bounds
+            console.log("Movement validation:", {
+              fromRow,
+              fromCol,
+              toRow: row,
+              toCol: col,
+              rowDiff,
+              colDiff,
+              targetCell: this.state.board[row][col],
+            });
+
+            // Allow movement to any adjacent empty tile
             return (
-              rowDiff <= 1 &&
-              colDiff <= 1 &&
-              this.state.board[row][col] === "" &&
-              row >= 0 &&
-              row < 4 &&
-              col >= 0 &&
-              col < 4
+              rowDiff <= 1 && colDiff <= 1 && this.state.board[row][col] === ""
             );
           }
 
-          // Placement phase validation
+          // Placement phase validation remains the same
           return (
             this.state.board[row][col] === "" &&
             this.state.pieces[this.state.mySymbol] < 4
