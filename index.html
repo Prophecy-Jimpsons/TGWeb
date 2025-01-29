@@ -309,10 +309,10 @@
         <button class="main-button" id="joinBtn">Join Game</button>
         <button class="main-button" id="resetBtn">New Game</button>
     </div>
+
     <script>
         let tg = window.Telegram.WebApp;
         const API_URL = 'https://pjimpsons.pythonanywhere.com';
-
 
         class GameState {
             constructor() {
@@ -323,7 +323,13 @@
                     phase: 'placement',
                     pieces: { O: 0, X: 0 },
                     selectedPiece: null,
-                    lastMove: null
+                    lastMove: null,
+                    gameEnded: false,
+                    winner: null,
+                    players: {},
+                    joinTimeout: 60000,
+                    placementTimeout: 60000,
+                    lastActivityTime: Date.now()
                 };
                 this.lastUpdate = Date.now();
                 this.isProcessingMove = false;
@@ -331,16 +337,18 @@
 
             shouldUpdate(newState) {
                 const now = Date.now();
-                if (now - this.lastUpdate < 100) return false; // Debounce 100ms
+                if (now - this.lastUpdate < 100) return false;
                 return JSON.stringify(this.state) !== JSON.stringify(newState);
             }
 
             update(newState) {
                 if (!this.shouldUpdate(newState)) return;
-                
                 this.state = newState;
                 this.lastUpdate = Date.now();
                 updateBoard();
+                updateStatus();
+                updatePlayerDisplay();
+                updatePhaseIndicator();
             }
 
             isValidTurn() {
@@ -351,7 +359,7 @@
                 );
             }
 
-            handleCellClick(event) {
+            async handleCellClick(event) {
                 if (!this.isValidTurn() || this.isProcessingMove) return;
                 
                 const row = parseInt(event.target.dataset.row);
@@ -360,46 +368,58 @@
                 try {
                     this.isProcessingMove = true;
                     if (this.state.phase === 'placement') {
-                        this.handlePlacement(row, col);
+                        await this.handlePlacement(row, col);
                     } else {
-                        this.handleMovement(row, col);
+                        await this.handleMovement(row, col);
                     }
                 } finally {
                     this.isProcessingMove = false;
+                }
+            }
+
+            async handlePlacement(row, col) {
+                if (this.state.pieces[this.state.mySymbol] >= 4 || 
+                    this.state.board[row][col] !== '') return;
+                await makeMove(row, col);
+            }
+
+            async handleMovement(row, col) {
+                if (!this.state.selectedPiece && 
+                    this.state.board[row][col] === this.state.mySymbol) {
+                    this.state.selectedPiece = {row, col};
+                    updateBoard();
+                    return;
+                }
+                
+                if (this.state.selectedPiece) {
+                    await makeMove(row, col, this.state.selectedPiece);
+                    this.state.selectedPiece = null;
                 }
             }
         }
 
         const gameState = new GameState();
 
-        
-    
-        let isProcessingMove = false;
-
         function checkTimeouts() {
             const currentTime = Date.now();
             
-
-            // Check for inactive game or incomplete joins
-            if (Object.keys(gameState.players).length < 2) {
-                if (currentTime - gameState.lastActivityTime > gameState.joinTimeout) {
+            if (Object.keys(gameState.state.players).length < 2) {
+                if (currentTime - gameState.state.lastActivityTime > gameState.state.joinTimeout) {
                     resetGame();
                     document.getElementById('status').textContent = 'Game reset due to inactivity. Click Join Game to play.';
                     return;
                 }
             }
 
-            // Check for placement phase timeout
-            if (gameState.phase === 'placement' && 
-                (gameState.pieces.X > 0 || gameState.pieces.O > 0) && // Game has started
-                currentTime - gameState.lastActivityTime > gameState.placementTimeout) {
+            if (gameState.state.phase === 'placement' && 
+                (gameState.state.pieces.X > 0 || gameState.state.pieces.O > 0) && 
+                currentTime - gameState.state.lastActivityTime > gameState.state.placementTimeout) {
                 resetGame();
                 document.getElementById('status').textContent = 'Game reset due to slow piece placement.';
                 return;
             }
         }
 
-    
         function initializeGame() {
             const board = document.getElementById('game-board');
             board.innerHTML = '';
@@ -421,36 +441,31 @@
         }
 
         async function resetGame() {
-        try {
-            const response = await fetch(`${API_URL}/reset_game`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    chatId: tg.initDataUnsafe.chat?.id || 'default'
-                })
-            });
-            const data = await response.json();
-            if (data.success) {
-                gameState.mySymbol = null;
-                gameState.selectedPiece = null;
-                gameState.lastActivityTime = Date.now();
-                updateGameState(data.gameState);
+            try {
+                const response = await fetch(`${API_URL}/reset_game`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chatId: tg.initDataUnsafe.chat?.id || 'default'
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    gameState.state.mySymbol = null;
+                    gameState.state.selectedPiece = null;
+                    gameState.state.lastActivityTime = Date.now();
+                    updateGameState(data.gameState);
+                }
+            } catch (error) {
+                console.error('Error:', error);
             }
-        } catch (error) {
-            console.error('Error:', error);
         }
-    }
 
-    
         async function checkGameStatus() {
             try {
                 const response = await fetch(`${API_URL}/get_game_state`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         chatId: tg.initDataUnsafe.chat?.id || 'default',
                         userId: tg.initDataUnsafe.user?.id
@@ -466,133 +481,42 @@
                 document.getElementById('status').textContent = 'Error connecting to game server';
             }
         }
-    
+
         async function handleJoin() {
-            gameState.lastActivityTime = Date.now();
-        try {
-            const response = await fetch(`${API_URL}/join_game`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    chatId: tg.initDataUnsafe.chat?.id || 'default',
-                    userId: tg.initDataUnsafe.user?.id,
-                    username: tg.initDataUnsafe.user?.username || 'Player'
-                })
-            });
-            const data = await response.json();
-            if (data.success) {
-                // Explicitly set mySymbol before updating state
-                const symbol = data.gameState.mySymbol;
-                updateGameState(data.gameState);
-                gameState.mySymbol = symbol;  // Ensure symbol is set after state update
-                document.getElementById('status').textContent = `You joined as ${symbol}`;
-            } else {
-                document.getElementById('status').textContent = data.message;
-            }
-        } catch (error) {
-            console.error('Error:', error);
-            document.getElementById('status').textContent = 'Error joining game';
-        }
-    }
-    
-    
-    // Early validation
-            if (!isValidMove()) return;
-            
-            const row = parseInt(event.target.dataset.row);
-            const col = parseInt(event.target.dataset.col);
-            
-            // State guard
-            if (isProcessingMove) {
-                console.log('Move already in progress');
-                return;
-            }
-            
             try {
-                isProcessingMove = true;
-                
-                if (gameState.phase === 'placement') {
-                    await handlePlacementPhase(row, col);
-                } else {
-                    await handleMovementPhase(row, col);
-                }
-            } catch (error) {
-                console.error('Move failed:', error);
-                revertMove(row, col);
-            } finally {
-                isProcessingMove = false;
-            }
-        
-
-        function isValidMove() {
-            return (
-                gameState.mySymbol && 
-                !gameState.gameEnded && 
-                gameState.currentPlayer === gameState.mySymbol &&
-                !isProcessingMove
-            );
-        }
-
-        async function handlePlacementPhase(row, col) {
-            if (gameState.pieces[gameState.mySymbol] >= 4 || 
-                gameState.board[row][col] !== '') {
-                return;
-            }
-            
-            const previousState = {...gameState.board[row]};
-            
-            try {
-                gameState.board[row][col] = gameState.mySymbol;
-                updateBoard();
-                
-                const success = await makeMove(row, col);
-                if (!success) {
-                    revertMove(row, col, previousState);
-                }
-            } catch (error) {
-                revertMove(row, col, previousState);
-                throw error;
-            }
-        }
-
-        async function handleMovementPhase(row, col) {
-            if (!gameState.selectedPiece && 
-                gameState.board[row][col] === gameState.mySymbol) {
-                gameState.selectedPiece = {row, col};
-                updateBoard();
-                return;
-            }
-            
-            if (gameState.selectedPiece) {
-                await processMovement(row, col);
-            }
-        }
-
-        function revertMove(row, col, previousState = '') {
-            gameState.board[row][col] = previousState;
-            updateBoard();
-        }
-
-        
-    
-        async function makeMove(row, col, selectedPiece = null) {
-        console.log('Making move:', {
-            row, col, selectedPiece,
-            currentState: gameState
-        });
-        try {
-            const response = await fetch(`${API_URL}/make_move`, {
-
+                const response = await fetch(`${API_URL}/join_game`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chatId: tg.initDataUnsafe.chat?.id || 'default',
+                        userId: tg.initDataUnsafe.user?.id,
+                        username: tg.initDataUnsafe.user?.username || 'Player'
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    const symbol = data.gameState.mySymbol;
+                    updateGameState(data.gameState);
+                    gameState.state.mySymbol = symbol;
+                    document.getElementById('status').textContent = `You joined as ${symbol}`;
+                } else {
+                    document.getElementById('status').textContent = data.message;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('status').textContent = 'Error joining game';
+            }
+        }
+
+        async function makeMove(row, col, selectedPiece = null) {
+            try {
+                const response = await fetch(`${API_URL}/make_move`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         row: row,
                         col: col,
-                        symbol: gameState.mySymbol,
+                        symbol: gameState.state.mySymbol,
                         selectedPiece: selectedPiece,
                         chatId: tg.initDataUnsafe.chat?.id || 'default',
                         userId: tg.initDataUnsafe.user?.id
@@ -600,13 +524,12 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    gameState.selectedPiece = null;
+                    gameState.state.selectedPiece = null;
                     updateGameState(data.gameState);
                     return true;
-                } else {
-                    document.getElementById('status').textContent = data.message;
-                    return false;
                 }
+                document.getElementById('status').textContent = data.message;
+                return false;
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('status').textContent = 'Error making move';
@@ -614,170 +537,124 @@
             }
         }
 
-        function logGameState() {
-        console.log('Current Game State:', {
-            phase: gameState.phase,
-            currentPlayer: gameState.currentPlayer,
-            mySymbol: gameState.mySymbol,
-            pieces: gameState.pieces,
-            board: gameState.board
-        });
-}
-
-    
-    
-    
-    function updateBoard() {
-    const cells = document.getElementsByClassName('cell');
-    const winningPattern = getWinningPattern(gameState.board, gameState.winner);
-    
-    for(let i = 0; i < 4; i++) {
-        for(let j = 0; j < 4; j++) {
-            const index = i * 4 + j;
-            const cell = cells[index];
-            cell.textContent = gameState.board[i][j];
-            cell.className = 'cell';
+        function updateBoard() {
+            const cells = document.querySelectorAll('.cell');
+            const winningPattern = getWinningPattern(gameState.state.board, gameState.state.winner);
             
-            // Highlight winning pattern
-            if (gameState.gameEnded && gameState.winner && winningPattern) {
-                if (winningPattern.some(([r, c]) => r === i && c === j)) {
-                    cell.classList.add('winner');
+            cells.forEach((cell, index) => {
+                const row = Math.floor(index / 4);
+                const col = index % 4;
+                cell.textContent = gameState.state.board[row][col];
+                cell.className = 'cell';
+                
+                if (gameState.state.gameEnded && gameState.state.winner && winningPattern) {
+                    if (winningPattern.some(([r, c]) => r === row && c === col)) {
+                        cell.classList.add('winner');
+                    }
+                }
+                
+                if (gameState.state.selectedPiece && 
+                    row === gameState.state.selectedPiece.row && 
+                    col === gameState.state.selectedPiece.col) {
+                    cell.classList.add('selected');
+                }
+                
+                if (gameState.state.lastMove && 
+                    row === gameState.state.lastMove[0] && 
+                    col === gameState.state.lastMove[1]) {
+                    cell.classList.add('last-move');
+                }
+            });
+        }
+
+        function getWinningPattern(board, winner) {
+            if (!winner) return null;
+
+            // Check rows
+            for (let i = 0; i < 4; i++) {
+                if (board[i].every(cell => cell === winner)) {
+                    return [[i,0], [i,1], [i,2], [i,3]];
                 }
             }
-            
-            if (gameState.selectedPiece && 
-                i === gameState.selectedPiece.row && 
-                j === gameState.selectedPiece.col) {
-                cell.classList.add('selected');
+
+            // Check columns
+            for (let j = 0; j < 4; j++) {
+                if (board.every(row => row[j] === winner)) {
+                    return [[0,j], [1,j], [2,j], [3,j]];
+                }
             }
-            
-            if (gameState.lastMove && 
-                i === gameState.lastMove[0] && 
-                j === gameState.lastMove[1]) {
-                cell.classList.add('last-move');
+
+            // Check diagonals
+            if (board[0][0] === winner && board[1][1] === winner && 
+                board[2][2] === winner && board[3][3] === winner) {
+                return [[0,0], [1,1], [2,2], [3,3]];
             }
-        }
-    }
-}
 
-function getWinningPattern(board, winner) {
-    if (!winner) return null;
-
-    // Check rows
-    for (let i = 0; i < 4; i++) {
-        if (board[i].every(cell => cell === winner)) {
-            return [[i,0], [i,1], [i,2], [i,3]];
-        }
-    }
-
-    // Check columns
-    for (let j = 0; j < 4; j++) {
-        if (board.every(row => row[j] === winner)) {
-            return [[0,j], [1,j], [2,j], [3,j]];
-        }
-    }
-
-    // Check main diagonal
-    if (board[0][0] === winner && board[1][1] === winner && 
-        board[2][2] === winner && board[3][3] === winner) {
-        return [[0,0], [1,1], [2,2], [3,3]];
-    }
-
-    // Check anti-diagonal
-    if (board[0][3] === winner && board[1][2] === winner && 
-        board[2][1] === winner && board[3][0] === winner) {
-        return [[0,3], [1,2], [2,1], [3,0]];
-    }
-
-    // Check 2x2 squares
-    for (let i = 0; i < 3; i++) {
-        for (let j = 0; j < 3; j++) {
-            if (board[i][j] === winner && board[i][j+1] === winner &&
-                board[i+1][j] === winner && board[i+1][j+1] === winner) {
-                return [[i,j], [i,j+1], [i+1,j], [i+1,j+1]];
+            if (board[0][3] === winner && board[1][2] === winner && 
+                board[2][1] === winner && board[3][0] === winner) {
+                return [[0,3], [1,2], [2,1], [3,0]];
             }
+
+            // Check 2x2 squares
+            for (let i = 0; i < 3; i++) {
+                for (let j = 0; j < 3; j++) {
+                    if (board[i][j] === winner && board[i][j+1] === winner &&
+                        board[i+1][j] === winner && board[i+1][j+1] === winner) {
+                        return [[i,j], [i,j+1], [i+1,j], [i+1,j+1]];
+                    }
+                }
+            }
+
+            return null;
         }
-    }
 
-    return null;
-}
-
-    
         function updateStatus() {
             const statusDiv = document.getElementById('status');
-            if (gameState.gameEnded && gameState.winner) {
-                const winnerName = gameState.players[gameState.winner];
-                statusDiv.textContent = `${winnerName} (${gameState.winner}) has won! 🎉 Click New Game to play again`;
+            if (gameState.state.gameEnded && gameState.state.winner) {
+                const winnerName = gameState.state.players[gameState.state.winner];
+                statusDiv.textContent = `${winnerName} (${gameState.state.winner}) has won! 🎉 Click New Game to play again`;
                 statusDiv.classList.add('winner');
-            } else if (Object.keys(gameState.players).length < 2) {
+            } else if (Object.keys(gameState.state.players).length < 2) {
                 statusDiv.textContent = 'Waiting for players...';
                 statusDiv.classList.remove('winner');
             } else {
-                const isMyTurn = gameState.currentPlayer === gameState.mySymbol;
-                const currentPlayerName = gameState.players[gameState.currentPlayer];
-                statusDiv.textContent = isMyTurn ? 'Your turn!' : `Waiting for ${currentPlayerName}'s (${gameState.currentPlayer}) move...`;
+                const isMyTurn = gameState.state.currentPlayer === gameState.state.mySymbol;
+                const currentPlayerName = gameState.state.players[gameState.state.currentPlayer];
+                statusDiv.textContent = isMyTurn ? 'Your turn!' : `Waiting for ${currentPlayerName}'s (${gameState.state.currentPlayer}) move...`;
                 statusDiv.classList.remove('winner');
             }
         }
 
-
-
-
-
         function updatePlayerDisplay() {
-        const phaseDiv = document.getElementById('phaseIndicator');
-        const playersInfo = Object.entries(gameState.players)
-            .map(([symbol, name]) => `${symbol}: ${name}`)
-            .join(' vs ');
-        phaseDiv.innerHTML = `${playersInfo}<br>${gameState.phase === 'placement' ? 'Place your pieces' : 'Move your pieces'}`;
-    }
+            const phaseDiv = document.getElementById('phaseIndicator');
+            const playersInfo = Object.entries(gameState.state.players)
+                .map(([symbol, name]) => `${symbol}: ${name}`)
+                .join(' vs ');
+            phaseDiv.innerHTML = `${playersInfo}<br>${gameState.state.phase === 'placement' ? 'Place your pieces' : 'Move your pieces'}`;
+        }
 
-
-    
         function updatePhaseIndicator() {
             const phaseDiv = document.getElementById('phaseIndicator');
             const piecesDiv = document.getElementById('piecesCount');
             
-            if (gameState.phase === 'placement') {
+            if (gameState.state.phase === 'placement') {
                 phaseDiv.textContent = 'Phase: Place your pieces (4 each)';
             } else {
                 phaseDiv.textContent = 'Phase: Move your pieces to win';
             }
             
-            piecesDiv.textContent = `Pieces placed - X: ${gameState.pieces.X}/4, O: ${gameState.pieces.O}/4`;
+            piecesDiv.textContent = `Pieces placed - X: ${gameState.state.pieces.X}/4, O: ${gameState.state.pieces.O}/4`;
         }
-    
+
+        function updateGameState(newState) {
+            if (!newState || typeof newState !== 'object') return;
+            gameState.update(newState);
+        }
+
         document.getElementById('joinBtn').addEventListener('click', handleJoin);
-        document.getElementById('resetBtn').addEventListener('click', async () => {
-            try {
-                const response = await fetch(`${API_URL}/reset_game`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        chatId: tg.initDataUnsafe.chat?.id || 'default'
-                    })
-                });
-                const data = await response.json();
-                if (data.success) {
-                    gameState.mySymbol = null;
-                    gameState.selectedPiece = null;
-                    updateGameState(data.gameState);
-                    document.getElementById('status').textContent = 'Game reset! Click Join Game to play.';
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                document.getElementById('status').textContent = 'Error resetting game';
-            }
-        });
-    
-        // Poll for game state updates
+        document.getElementById('resetBtn').addEventListener('click', resetGame);
         setInterval(checkGameStatus, 1000);
-    
-        // Initialize the game
         initializeGame();
     </script>
-    </body>
-    </html>
-    
+</body>
+</html>
