@@ -6,202 +6,227 @@
     <title>Super Tic Tac Toe</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        :root {
-            --tg-theme-bg-color: #fff;
-            --tg-theme-text-color: #000;
-            --tg-theme-button-color: #2481cc;
-            --tg-theme-button-text-color: #fff;
-            --highlight-color: rgba(36, 129, 204, 0.3);
-            --win-highlight: rgba(76, 175, 80, 0.3);
-            --game-transition-duration: 0.3s;
-        }
-    
-        body {
-            background-color: var(--tg-theme-bg-color);
-            color: var(--tg-theme-text-color);
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            margin: 0;
-            padding: 20px;
-            min-height: 100vh;
-            touch-action: manipulation;
-            -webkit-touch-callout: none;
-            -webkit-user-select: none;
-            user-select: none;
-            transition: 
-                background-color var(--game-transition-duration) ease,
-                color var(--game-transition-duration) ease;
-        }
-    
-        .game-info {
-            text-align: center;
-            margin-bottom: 2rem;
-            width: 100%;
-            max-width: 42rem;
-        }
-    
-        .phase-indicator {
-            font-size: 1.25rem;
-            color: var(--tg-theme-button-color);
-            margin: 1rem 0;
-            padding: 1rem;
-            border-radius: 0.75rem;
-            background: rgba(36, 129, 204, 0.1);
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-    
-        .pieces-count {
-            font-size: 1.125rem;
-            margin: 1rem 0;
-            font-weight: bold;
-        }
-    
-        .game-board {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 0.5rem;
-            max-width: 400px;
-            width: 95vw;
-            margin: 20px auto;
-            background: var(--tg-theme-bg-color);
-            padding: 0.5rem;
-            border-radius: 0.75rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-            aspect-ratio: 1;
-        }
-    
-        .cell {
-            aspect-ratio: 1;
-            border: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.5rem;
-            font-weight: bold;
-            cursor: pointer;
-            background: var(--tg-theme-bg-color);
-            transition: all 0.3s ease;
-            border-radius: 0.5rem;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-            -webkit-tap-highlight-color: transparent;
-        }
-    
-        .cell:hover:not(:disabled) {
-            background-color: var(--highlight-color);
-            transform: translateY(-2px);
-        }
-    
-        .cell:active {
-            transform: scale(0.95);
-        }
-    
-        .cell.selected {
-            box-shadow: 0 0 0 4px var(--tg-theme-button-color);
-            animation: pulse 1.5s infinite;
-        }
-    
-        .cell.last-move {
-            border: 3px solid #4CAF50;
-            animation: bounce 0.5s ease-in-out;
-        }
-    
-        .status {
-            margin: 1.5rem 0;
-            font-size: 1.25rem;
-            font-weight: bold;
-            padding: 1rem;
-            border-radius: 0.75rem;
-            background: rgba(36, 129, 204, 0.1);
-            width: 100%;
-            text-align: center;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-    
-        .button-container {
-            display: flex;
-            gap: 1.5rem;
-            margin-top: 1.5rem;
-        }
-    
-        .main-button {
-            background: var(--tg-theme-button-color);
-            color: var(--tg-theme-button-text-color);
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 0.5rem;
-            cursor: pointer;
-            font-size: 1rem;
-            font-weight: bold;
-            transition: all 0.3s ease;
-            min-width: 120px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            -webkit-tap-highlight-color: transparent;
-        }
-    
-        .main-button:hover {
-            transform: translateY(-2px);
-        }
-    
-        .main-button:active {
-            transform: scale(0.95);
-            opacity: 0.8;
-        }
-    
-        .winner {
-            color: #4CAF50;
-            font-weight: bold;
-            animation: bounce 1s ease-in-out;
-        }
-    
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); }
-            50% { transform: scale(0.95); }
-        }
-    
-        @keyframes bounce {
-            0%, 100% { transform: translateY(0); }
-            50% { transform: translateY(-5px); }
-        }
-    
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-    
-        @media (max-width: 640px) {
-            .game-board {
-                gap: 0.25rem;
-                padding: 0.25rem;
-            }
-    
-            .cell {
-                font-size: 1.25rem;
-            }
-    
-            .status {
-                font-size: 1rem;
-            }
-    
-            .main-button {
-                padding: 0.5rem 1rem;
-                font-size: 0.875rem;
-            }
-    
-            .phase-indicator {
-                font-size: 1rem;
-            }
-        }
-    
-        @media (prefers-color-scheme: dark) {
             :root {
-                --tg-theme-bg-color: #1a1a1a;
-                --tg-theme-text-color: #ffffff;
-                --tg-theme-button-color: #3b82f6;
-                --highlight-color: rgba(59, 130, 246, 0.3);
-            }
+        --tg-theme-bg-color: #fff8e1;  /* Light yellow background */
+        --tg-theme-text-color: #5d4037;  /* Warm brown text */
+        --tg-theme-button-color: #ffa000;  /* Amber button */
+        --tg-theme-button-text-color: #fff;
+        --highlight-color: rgba(255, 160, 0, 0.2);  /* Amber highlight */
+        --win-highlight: rgba(76, 175, 80, 0.3);
+        --game-transition-duration: 0.3s;
+        --cell-border-color: #ffb300;  /* Darker amber for borders */
+        --shadow-color: rgba(255, 160, 0, 0.2);
+    }
+
+    body {
+        background-color: var(--tg-theme-bg-color);
+        color: var(--tg-theme-text-color);
+        font-family: 'Segoe UI', Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 0;
+        padding: 20px;
+        min-height: 100vh;
+        touch-action: manipulation;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+        transition: all var(--game-transition-duration) ease;
+        background-image: linear-gradient(45deg, #fff8e1 25%, #fff3e0 25%, #fff3e0 50%, #fff8e1 50%, #fff8e1 75%, #fff3e0 75%, #fff3e0 100%);
+        background-size: 56.57px 56.57px;
+    }
+
+    .game-info {
+        text-align: center;
+        margin-bottom: 2rem;
+        width: 100%;
+        max-width: 42rem;
+        background: rgba(255, 255, 255, 0.8);
+        padding: 1rem;
+        border-radius: 1rem;
+        box-shadow: 0 4px 6px var(--shadow-color);
+    }
+
+    .phase-indicator {
+        font-size: 1.25rem;
+        color: var(--tg-theme-button-color);
+        margin: 1rem 0;
+        padding: 1rem;
+        border-radius: 0.75rem;
+        background: rgba(255, 160, 0, 0.1);
+        box-shadow: 0 4px 6px var(--shadow-color);
+        border: 2px solid var(--cell-border-color);
+    }
+
+    .pieces-count {
+        font-size: 1.125rem;
+        margin: 1rem 0;
+        font-weight: bold;
+        color: var(--tg-theme-text-color);
+        text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5);
+    }
+
+    .game-board {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.75rem;
+        max-width: 400px;
+        width: 95vw;
+        margin: 20px auto;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 1rem;
+        border-radius: 1rem;
+        box-shadow: 0 10px 20px var(--shadow-color);
+        aspect-ratio: 1;
+    }
+
+    .cell {
+        aspect-ratio: 1;
+        border: 2px solid var(--cell-border-color);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.75rem;
+        font-weight: bold;
+        cursor: pointer;
+        background: #ffffff;
+        transition: all 0.3s ease;
+        border-radius: 0.75rem;
+        box-shadow: 0 4px 8px var(--shadow-color);
+        -webkit-tap-highlight-color: transparent;
+        color: var(--tg-theme-button-color);
+    }
+
+    .cell:hover:not(:disabled) {
+        background-color: var(--highlight-color);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px var(--shadow-color);
+    }
+
+    .cell:active {
+        transform: scale(0.95);
+        box-shadow: 0 2px 4px var(--shadow-color);
+    }
+
+    .cell.selected {
+        box-shadow: 0 0 0 4px var(--tg-theme-button-color);
+        animation: pulse 1.5s infinite;
+        background-color: var(--highlight-color);
+    }
+
+    .cell.last-move {
+        border: 3px solid #4CAF50;
+        animation: bounce 0.5s ease-in-out;
+        background-color: rgba(76, 175, 80, 0.1);
+    }
+
+    .status {
+        margin: 1.5rem 0;
+        font-size: 1.25rem;
+        font-weight: bold;
+        padding: 1.25rem;
+        border-radius: 1rem;
+        background: rgba(255, 160, 0, 0.1);
+        width: 100%;
+        text-align: center;
+        box-shadow: 0 4px 6px var(--shadow-color);
+        border: 2px solid var(--cell-border-color);
+    }
+
+    .button-container {
+        display: flex;
+        gap: 1.5rem;
+        margin-top: 1.5rem;
+    }
+
+    .main-button {
+        background: var(--tg-theme-button-color);
+        color: var(--tg-theme-button-text-color);
+        border: none;
+        padding: 1rem 2rem;
+        border-radius: 0.75rem;
+        cursor: pointer;
+        font-size: 1.125rem;
+        font-weight: bold;
+        transition: all 0.3s ease;
+        min-width: 140px;
+        box-shadow: 0 4px 8px var(--shadow-color);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .main-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px var(--shadow-color);
+        background: #ff8f00;
+    }
+
+    .main-button:active {
+        transform: scale(0.95);
+        box-shadow: 0 2px 4px var(--shadow-color);
+    }
+
+    .winner {
+        color: #4CAF50;
+        font-weight: bold;
+        animation: bounce 1s ease-in-out;
+        text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5);
+    }
+
+    /* Keep your existing animations */
+
+    @media (max-width: 640px) {
+        .game-board {
+            gap: 0.5rem;
+            padding: 0.75rem;
         }
+
+        .cell {
+            font-size: 1.5rem;
+            border-radius: 0.5rem;
+        }
+
+        .status {
+            font-size: 1.125rem;
+            padding: 1rem;
+        }
+
+        .main-button {
+            padding: 0.75rem 1.5rem;
+            font-size: 1rem;
+            min-width: 120px;
+        }
+
+        .phase-indicator {
+            font-size: 1rem;
+            padding: 0.75rem;
+        }
+    }
+
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --tg-theme-bg-color: #2d2d2d;
+            --tg-theme-text-color: #fff8e1;
+            --tg-theme-button-color: #ffa000;
+            --highlight-color: rgba(255, 160, 0, 0.2);
+            --shadow-color: rgba(0, 0, 0, 0.3);
+        }
+
+        body {
+            background-image: linear-gradient(45deg, #2d2d2d 25%, #333333 25%, #333333 50%, #2d2d2d 50%, #2d2d2d 75%, #333333 75%, #333333 100%);
+        }
+
+        .cell {
+            background: #3d3d3d;
+            color: #ffd54f;
+        }
+
+        .game-info, .game-board {
+            background: rgba(0, 0, 0, 0.2);
+        }
+    }
+
     </style>
     
     
