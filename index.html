@@ -62,7 +62,13 @@
             text-align: center;
         }
 
-        .join-btn, .reset-btn {
+        .button-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .main-button {
             background: var(--tg-theme-button-color);
             color: var(--tg-theme-button-text-color);
             border: none;
@@ -70,11 +76,10 @@
             border-radius: 8px;
             cursor: pointer;
             font-size: 16px;
-            margin: 10px;
             transition: opacity 0.2s;
         }
 
-        .join-btn:active, .reset-btn:active {
+        .main-button:active {
             opacity: 0.8;
         }
 
@@ -85,16 +90,17 @@
     </style>
 </head>
 <body>
-    <div class="status" id="status">Waiting for players...</div>
+    <div class="status" id="status">Welcome to 4x4 Tic Tac Toe!</div>
     <div class="players" id="players"></div>
     <div id="game-board" class="game-board"></div>
-    <div>
-        <button class="join-btn" id="joinBtn">Join Game</button>
-        <button class="reset-btn" id="resetBtn">New Game</button>
+    <div class="button-container">
+        <button class="main-button" id="joinBtn">Join Game</button>
+        <button class="main-button" id="resetBtn">New Game</button>
     </div>
 
     <script>
         let tg = window.Telegram.WebApp;
+        const API_URL = 'https://pjimpsons.pythonanywhere.com';
         let gameState = {
             board: Array(4).fill().map(() => Array(4).fill('')),
             currentPlayer: 'X',
@@ -120,32 +126,59 @@
             updateBoard();
             tg.ready();
             tg.expand();
+            checkGameStatus();
+        }
 
-            // Check if we're in a group chat
-            if (tg.initDataUnsafe.chat?.type === 'group' || 
-                tg.initDataUnsafe.chat?.type === 'supergroup') {
-                checkGameStatus();
+        async function checkGameStatus() {
+            try {
+                const response = await fetch(`${API_URL}/get_game_state`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        chatId: tg.initDataUnsafe.chat?.id || 'default',
+                        userId: tg.initDataUnsafe.user?.id
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    updateGameState(data.gameState);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('status').textContent = 'Error connecting to game server';
             }
         }
 
-        function checkGameStatus() {
-            tg.sendData(JSON.stringify({
-                action: 'check_game',
-                chatId: tg.initDataUnsafe.chat?.id,
-                userId: tg.initDataUnsafe.user?.id
-            }));
+        async function handleJoin() {
+            try {
+                const response = await fetch(`${API_URL}/join_game`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        chatId: tg.initDataUnsafe.chat?.id || 'default',
+                        userId: tg.initDataUnsafe.user?.id,
+                        username: tg.initDataUnsafe.user?.username || 'Player'
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    gameState.mySymbol = data.gameState.mySymbol;
+                    updateGameState(data.gameState);
+                    document.getElementById('status').textContent = `You joined as ${data.gameState.mySymbol}`;
+                } else {
+                    document.getElementById('status').textContent = data.message;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('status').textContent = 'Error joining game';
+            }
         }
 
-        function handleJoin() {
-            tg.sendData(JSON.stringify({
-                action: 'join',
-                chatId: tg.initDataUnsafe.chat?.id,
-                userId: tg.initDataUnsafe.user?.id,
-                username: tg.initDataUnsafe.user?.username
-            }));
-        }
-
-        function handleCellClick(event) {
+        async function handleCellClick(event) {
             if (gameState.gameEnded || gameState.currentPlayer !== gameState.mySymbol) return;
             
             const row = parseInt(event.target.dataset.row);
@@ -153,14 +186,37 @@
             
             if (gameState.board[row][col] !== '') return;
             
-            tg.sendData(JSON.stringify({
-                action: 'move',
-                row: row,
-                col: col,
-                symbol: gameState.mySymbol,
-                chatId: tg.initDataUnsafe.chat?.id,
-                userId: tg.initDataUnsafe.user?.id
-            }));
+            try {
+                const response = await fetch(`${API_URL}/make_move`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        row: row,
+                        col: col,
+                        symbol: gameState.mySymbol,
+                        chatId: tg.initDataUnsafe.chat?.id || 'default',
+                        userId: tg.initDataUnsafe.user?.id
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    updateGameState(data.gameState);
+                } else {
+                    document.getElementById('status').textContent = data.message;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('status').textContent = 'Error making move';
+            }
+        }
+
+        function updateGameState(newState) {
+            gameState = {...gameState, ...newState};
+            updateBoard();
+            updatePlayers();
+            updateStatus();
         }
 
         function updateBoard() {
@@ -180,29 +236,43 @@
                 .join(' vs ');
         }
 
+        function updateStatus() {
+            const statusDiv = document.getElementById('status');
+            if (gameState.gameEnded) {
+                statusDiv.textContent = `Game Over! ${gameState.winner ? gameState.winner + ' wins!' : 'Draw!'}`;
+            } else if (Object.keys(gameState.players).length < 2) {
+                statusDiv.textContent = 'Waiting for players...';
+            } else {
+                statusDiv.textContent = `Current player: ${gameState.currentPlayer}`;
+            }
+        }
+
         document.getElementById('joinBtn').addEventListener('click', handleJoin);
-        document.getElementById('resetBtn').addEventListener('click', () => {
-            tg.sendData(JSON.stringify({
-                action: 'reset',
-                chatId: tg.initDataUnsafe.chat?.id
-            }));
+        document.getElementById('resetBtn').addEventListener('click', async () => {
+            try {
+                const response = await fetch(`${API_URL}/reset_game`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        chatId: tg.initDataUnsafe.chat?.id || 'default'
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    gameState.mySymbol = null;
+                    updateGameState(data.gameState);
+                    document.getElementById('status').textContent = 'Game reset! Click Join Game to play.';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('status').textContent = 'Error resetting game';
+            }
         });
 
-        // Handle incoming updates
-        tg.onEvent('message', function(message) {
-            const data = JSON.parse(message);
-            
-            if (data.type === 'game_state') {
-                gameState = {...gameState, ...data.state};
-                updateBoard();
-                updatePlayers();
-                document.getElementById('status').textContent = data.message;
-            }
-            
-            if (data.type === 'symbol_assigned') {
-                gameState.mySymbol = data.symbol;
-            }
-        });
+        // Poll for game state updates
+        setInterval(checkGameStatus, 1000);
 
         initializeGame();
     </script>
