@@ -312,6 +312,7 @@
     <script>
         let tg = window.Telegram.WebApp;
         const API_URL = 'https://pjimpsons.pythonanywhere.com';
+
         let gameState = {
             board: Array(4).fill().map(() => Array(4).fill('')),
             currentPlayer: 'X',
@@ -321,10 +322,42 @@
             phase: 'placement',
             pieces: { X: 0, O: 0 },
             selectedPiece: null,
-            lastMove: null
+            lastMove: null,
+            lastActivityTime: Date.now(),
+            placementTimeout: 60000, // 1 minute in milliseconds
+            joinTimeout: 60000 // 1 minute for joining
         };
     
         let isProcessingMove = false;
+
+        function checkTimeouts() {
+            const currentTime = Date.now();
+            
+            // Check for game completion
+            if (gameState.gameEnded) {
+                setTimeout(() => resetGame(), 3000); // Reset 3 seconds after game ends
+                return;
+            }
+
+            // Check for inactive game or incomplete joins
+            if (Object.keys(gameState.players).length < 2) {
+                if (currentTime - gameState.lastActivityTime > gameState.joinTimeout) {
+                    resetGame();
+                    document.getElementById('status').textContent = 'Game reset due to inactivity. Click Join Game to play.';
+                    return;
+                }
+            }
+
+            // Check for placement phase timeout
+            if (gameState.phase === 'placement' && 
+                (gameState.pieces.X > 0 || gameState.pieces.O > 0) && // Game has started
+                currentTime - gameState.lastActivityTime > gameState.placementTimeout) {
+                resetGame();
+                document.getElementById('status').textContent = 'Game reset due to slow piece placement.';
+                return;
+            }
+        }
+
     
         function initializeGame() {
             const board = document.getElementById('game-board');
@@ -345,6 +378,30 @@
             tg.expand();
             checkGameStatus();
         }
+
+        async function resetGame() {
+        try {
+            const response = await fetch(`${API_URL}/reset_game`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    chatId: tg.initDataUnsafe.chat?.id || 'default'
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                gameState.mySymbol = null;
+                gameState.selectedPiece = null;
+                gameState.lastActivityTime = Date.now();
+                updateGameState(data.gameState);
+            }
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    }
+
     
         async function checkGameStatus() {
             try {
@@ -361,6 +418,7 @@
                 const data = await response.json();
                 if (data.success) {
                     updateGameState(data.gameState);
+                    checkTimeouts();
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -369,6 +427,7 @@
         }
     
         async function handleJoin() {
+            gameState.lastActivityTime = Date.now();
         try {
             const response = await fetch(`${API_URL}/join_game`, {
                 method: 'POST',
@@ -398,6 +457,7 @@
     }
     
         async function handleCellClick(event) {
+            gameState.lastActivityTime = Date.now();
         if (!gameState.mySymbol || isProcessingMove || gameState.gameEnded || gameState.currentPlayer !== gameState.mySymbol) return;
         console.log('Processing move:', {
             currentPlayer: gameState.currentPlayer,
