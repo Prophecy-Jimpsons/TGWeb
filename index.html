@@ -212,10 +212,6 @@
         }
     
         async function handleJoin() {
-        if (gameState.mySymbol) {
-            document.getElementById('status').textContent = `Already joined as ${gameState.mySymbol}`;
-            return;
-        }
         try {
             const response = await fetch(`${API_URL}/join_game`, {
                 method: 'POST',
@@ -223,24 +219,26 @@
                     'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
-                        chatId: tg.initDataUnsafe.chat?.id || 'default',
-                        userId: tg.initDataUnsafe.user?.id,
-                        username: tg.initDataUnsafe.user?.username || 'Player'
-                    })
-                });
-                const data = await response.json();
-                if (data.success) {
-                    gameState.mySymbol = data.gameState.mySymbol;
-                    updateGameState(data.gameState);
-                    document.getElementById('status').textContent = `You joined as ${data.gameState.mySymbol}`;
-                } else {
-                    document.getElementById('status').textContent = data.message;
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                document.getElementById('status').textContent = 'Error joining game';
+                    chatId: tg.initDataUnsafe.chat?.id || 'default',
+                    userId: tg.initDataUnsafe.user?.id,
+                    username: tg.initDataUnsafe.user?.username || 'Player'
+                })
+            });
+            const data = await response.json();
+            if (data.success) {
+                // Explicitly set mySymbol before updating state
+                const symbol = data.gameState.mySymbol;
+                updateGameState(data.gameState);
+                gameState.mySymbol = symbol;  // Ensure symbol is set after state update
+                document.getElementById('status').textContent = `You joined as ${symbol}`;
+            } else {
+                document.getElementById('status').textContent = data.message;
             }
+        } catch (error) {
+            console.error('Error:', error);
+            document.getElementById('status').textContent = 'Error joining game';
         }
+    }
     
         async function handleCellClick(event) {
         if (!gameState.mySymbol || isProcessingMove || gameState.gameEnded || gameState.currentPlayer !== gameState.mySymbol) return;
@@ -372,17 +370,16 @@
 
     
     function updateGameState(newState) {
-        const oldSymbol = gameState.mySymbol;  // Preserve mySymbol
-        gameState = {...gameState, ...newState};
-        if (oldSymbol) {
-            gameState.mySymbol = oldSymbol;  // Restore mySymbol
+        const oldSymbol = gameState.mySymbol;  // Store current symbol
+        Object.assign(gameState, newState);     // Update state
+        if (oldSymbol) {                       // If we had a symbol
+            gameState.mySymbol = oldSymbol;    // Restore it
         }
         updateBoard();
         updateStatus();
         updatePhaseIndicator();
-        console.log('Updated Game State:', gameState);  // Debug log
+        console.log('Updated Game State:', gameState);
     }
-
     
         function updateBoard() {
             const cells = document.getElementsByClassName('cell');
