@@ -585,31 +585,53 @@
 
         isValidMove(row, col) {
           // First check if it's player's turn
-          if (!this.isValidTurn()) return false;
+          if (!this.isValidTurn()) {
+            console.log("Turn validation failed:", {
+              mySymbol: this.state.mySymbol,
+              currentPlayer: this.state.currentPlayer,
+              phase: this.state.phase,
+            });
+            return false;
+          }
 
           if (this.state.phase === "movement") {
             // If no piece is selected and clicking own piece, allow selection of any of your pieces
             if (!this.state.selectedPiece) {
-              return this.state.board[row][col] === this.state.mySymbol;
+              const isOwnPiece =
+                this.state.board[row][col] === this.state.mySymbol;
+              console.log("Piece selection validation:", {
+                position: { row, col },
+                piece: this.state.board[row][col],
+                isOwnPiece,
+              });
+              return isOwnPiece;
             }
 
             // If a piece is selected, allow movement to ANY empty tile
-            // Remove the adjacent tile restriction (rowDiff and colDiff checks)
             console.log("Movement validation:", {
               from: this.state.selectedPiece,
               to: { row, col },
               targetCell: this.state.board[row][col],
+              isEmpty: this.state.board[row][col] === "",
             });
 
             // Only check if target tile is empty
             return this.state.board[row][col] === "";
           }
 
-          // Placement phase validation remains the same
-          return (
+          // Placement phase validation
+          const isValidPlacement =
             this.state.board[row][col] === "" &&
-            this.state.pieces[this.state.mySymbol] < 4
-          );
+            this.state.pieces[this.state.mySymbol] < 4;
+
+          console.log("Placement validation:", {
+            position: { row, col },
+            isEmpty: this.state.board[row][col] === "",
+            piecesPlaced: this.state.pieces[this.state.mySymbol],
+            isValid: isValidPlacement,
+          });
+
+          return isValidPlacement;
         }
 
         async processMoveQueue() {
@@ -670,21 +692,47 @@
         }
 
         async handleCellClick(event) {
-          if (!this.isValidTurn()) {
-            console.log("Not valid turn:", {
-              mySymbol: this.state.mySymbol,
-              currentPlayer: this.state.currentPlayer,
-              gameEnded: this.state.gameEnded,
-              isProcessingMove: this.isProcessingMove,
-              pieces: this.state.pieces,
-            });
-            return;
-          }
-
           const row = parseInt(event.target.dataset.row);
           const col = parseInt(event.target.dataset.col);
 
-          console.log("Attempting move:", { row, col });
+          console.log("Cell clicked:", {
+            row,
+            col,
+            phase: this.state.phase,
+            selectedPiece: this.state.selectedPiece,
+            currentPlayer: this.state.currentPlayer,
+            mySymbol: this.state.mySymbol,
+          });
+
+          // Handle movement phase
+          if (this.state.phase === "movement") {
+            // Check for deselection first, before any other validation
+            if (
+              this.state.selectedPiece &&
+              row === this.state.selectedPiece.row &&
+              col === this.state.selectedPiece.col
+            ) {
+              console.log("Deselecting piece");
+              this.state.selectedPiece = null;
+              this.updateUI();
+              return;
+            }
+
+            // Then proceed with regular move handling
+            if (!this.isValidTurn()) {
+              console.log("Not valid turn");
+              return;
+            }
+
+            await this.handleMovement(row, col);
+            return;
+          }
+
+          // Handle placement phase
+          if (!this.isValidTurn()) {
+            console.log("Not valid turn");
+            return;
+          }
 
           if (!this.isValidMove(row, col)) {
             console.log("Invalid move:", { row, col });
@@ -693,9 +741,7 @@
 
           try {
             this.isProcessingMove = true;
-            const moveType =
-              this.state.phase === "placement" ? "placement" : "movement";
-            await this.processMove({ row, col, type: moveType });
+            await this.processMove({ row, col, type: "placement" });
           } catch (error) {
             console.error("Move processing error:", error);
           } finally {
