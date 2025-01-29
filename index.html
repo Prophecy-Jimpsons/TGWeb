@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jimp Tic Tac Toe</title>
+    <title>Super Tic Tac Toe</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
@@ -11,6 +11,8 @@
             --tg-theme-text-color: #000;
             --tg-theme-button-color: #2481cc;
             --tg-theme-button-text-color: #fff;
+            --highlight-color: rgba(36, 129, 204, 0.3);
+            --win-highlight: rgba(76, 175, 80, 0.3);
         }
 
         body {
@@ -24,6 +26,22 @@
             padding: 20px;
             min-height: 100vh;
             touch-action: manipulation;
+        }
+
+        .game-info {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .phase-indicator {
+            font-size: 16px;
+            color: var(--tg-theme-button-color);
+            margin: 10px 0;
+        }
+
+        .pieces-count {
+            font-size: 14px;
+            margin: 5px 0;
         }
 
         .game-board {
@@ -42,24 +60,39 @@
             align-items: center;
             justify-content: center;
             font-size: 24px;
+            font-weight: bold;
             cursor: pointer;
             background: var(--tg-theme-bg-color);
-            transition: background-color 0.2s;
+            transition: all 0.2s ease;
         }
 
         .cell:active {
-            background-color: rgba(36, 129, 204, 0.1);
+            background-color: var(--highlight-color);
+        }
+
+        .cell.selected {
+            background-color: var(--highlight-color);
+        }
+
+        .cell.last-move {
+            border-color: #4CAF50;
+        }
+
+        .cell.winning {
+            background-color: var(--win-highlight);
         }
 
         .status {
             margin: 20px 0;
             font-size: 18px;
             font-weight: bold;
+            text-align: center;
         }
 
         .players {
             margin: 10px 0;
             text-align: center;
+            font-size: 16px;
         }
 
         .button-container {
@@ -90,8 +123,12 @@
     </style>
 </head>
 <body>
-    <div class="status" id="status">Welcome to 4x4 Tic Tac Toe!</div>
-    <div class="players" id="players"></div>
+    <div class="game-info">
+        <div class="status" id="status">Welcome to Super Tic Tac Toe!</div>
+        <div class="phase-indicator" id="phaseIndicator"></div>
+        <div class="pieces-count" id="piecesCount"></div>
+        <div class="players" id="players"></div>
+    </div>
     <div id="game-board" class="game-board"></div>
     <div class="button-container">
         <button class="main-button" id="joinBtn">Join Game</button>
@@ -106,7 +143,11 @@
             currentPlayer: 'X',
             gameEnded: false,
             players: {},
-            mySymbol: null
+            mySymbol: null,
+            phase: 'placement',
+            pieces: { X: 0, O: 0 },
+            selectedPiece: null,
+            lastMove: null
         };
 
         function initializeGame() {
@@ -168,7 +209,6 @@
                 if (data.success) {
                     gameState.mySymbol = data.gameState.mySymbol;
                     updateGameState(data.gameState);
-                    document.getElementById('status').textContent = `You joined as ${data.gameState.mySymbol}`;
                 } else {
                     document.getElementById('status').textContent = data.message;
                 }
@@ -184,8 +224,32 @@
             const row = parseInt(event.target.dataset.row);
             const col = parseInt(event.target.dataset.col);
             
-            if (gameState.board[row][col] !== '') return;
-            
+            if (gameState.phase === 'placement') {
+                if (gameState.pieces[gameState.mySymbol] >= 4) return;
+                if (gameState.board[row][col] !== '') return;
+                
+                makeMove(row, col);
+            } else { // movement phase
+                if (gameState.selectedPiece) {
+                    if (row === gameState.selectedPiece.row && col === gameState.selectedPiece.col) {
+                        // Deselect piece
+                        gameState.selectedPiece = null;
+                        updateBoard();
+                        return;
+                    }
+                    if (gameState.board[row][col] === '') {
+                        makeMove(row, col, gameState.selectedPiece);
+                    }
+                } else {
+                    if (gameState.board[row][col] === gameState.mySymbol) {
+                        gameState.selectedPiece = {row, col};
+                        updateBoard();
+                    }
+                }
+            }
+        }
+
+        async function makeMove(row, col, selectedPiece = null) {
             try {
                 const response = await fetch(`${API_URL}/make_move`, {
                     method: 'POST',
@@ -196,12 +260,14 @@
                         row: row,
                         col: col,
                         symbol: gameState.mySymbol,
+                        selectedPiece: selectedPiece,
                         chatId: tg.initDataUnsafe.chat?.id || 'default',
                         userId: tg.initDataUnsafe.user?.id
                     })
                 });
                 const data = await response.json();
                 if (data.success) {
+                    gameState.selectedPiece = null;
                     updateGameState(data.gameState);
                 } else {
                     document.getElementById('status').textContent = data.message;
@@ -217,6 +283,7 @@
             updateBoard();
             updatePlayers();
             updateStatus();
+            updatePhaseIndicator();
         }
 
         function updateBoard() {
@@ -224,7 +291,21 @@
             for(let i = 0; i < 4; i++) {
                 for(let j = 0; j < 4; j++) {
                     const index = i * 4 + j;
-                    cells[index].textContent = gameState.board[i][j];
+                    const cell = cells[index];
+                    cell.textContent = gameState.board[i][j];
+                    cell.className = 'cell';
+                    
+                    if (gameState.selectedPiece && 
+                        i === gameState.selectedPiece.row && 
+                        j === gameState.selectedPiece.col) {
+                        cell.classList.add('selected');
+                    }
+                    
+                    if (gameState.lastMove && 
+                        i === gameState.lastMove[0] && 
+                        j === gameState.lastMove[1]) {
+                        cell.classList.add('last-move');
+                    }
                 }
             }
         }
@@ -243,8 +324,16 @@
             } else if (Object.keys(gameState.players).length < 2) {
                 statusDiv.textContent = 'Waiting for players...';
             } else {
-                statusDiv.textContent = `Current player: ${gameState.currentPlayer}`;
+                statusDiv.textContent = `${gameState.currentPlayer}'s turn`;
             }
+        }
+
+        function updatePhaseIndicator() {
+            const phaseDiv = document.getElementById('phaseIndicator');
+            const piecesDiv = document.getElementById('piecesCount');
+            
+            phaseDiv.textContent = `Phase: ${gameState.phase === 'placement' ? 'Place your pieces' : 'Move your pieces'}`;
+            piecesDiv.textContent = `Pieces - X: ${gameState.pieces.X}/4, O: ${gameState.pieces.O}/4`;
         }
 
         document.getElementById('joinBtn').addEventListener('click', handleJoin);
@@ -262,8 +351,8 @@
                 const data = await response.json();
                 if (data.success) {
                     gameState.mySymbol = null;
+                    gameState.selectedPiece = null;
                     updateGameState(data.gameState);
-                    document.getElementById('status').textContent = 'Game reset! Click Join Game to play.';
                 }
             } catch (error) {
                 console.error('Error:', error);
