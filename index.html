@@ -6,99 +6,111 @@
     <title>Super Tic Tac Toe</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-            :root {
-        --tg-theme-bg-color: #fff8e1;  /* Light yellow background */
-        --tg-theme-text-color: #5d4037;  /* Warm brown text */
-        --tg-theme-button-color: #ffa000;  /* Amber button */
-        --tg-theme-button-text-color: #fff;
-        --highlight-color: rgba(255, 160, 0, 0.2);  /* Amber highlight */
-        --win-highlight: rgba(76, 175, 80, 0.3);
-        --game-transition-duration: 0.3s;
-        --cell-border-color: #ffb300;  /* Darker amber for borders */
-        --shadow-color: rgba(255, 160, 0, 0.2);
-    }
+        :root {
+            --tg-theme-bg-color: #fff8e1;
+            --tg-theme-text-color: #5d4037;
+            --tg-theme-button-color: #ffa000;
+            --tg-theme-button-text-color: #fff;
+            --highlight-color: rgba(255, 160, 0, 0.2);
+            --win-highlight: rgba(76, 175, 80, 0.3);
+            --game-transition-duration: 0.3s;
+            --cell-border-color: #ffb300;
+            --shadow-color: rgba(255, 160, 0, 0.2);
+            --winner-bg: rgba(76, 175, 80, 0.2);
+            --container-width: min(95%, 400px);
+        }
+    
+        body {
+            background-color: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            font-family: 'Segoe UI', Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 10px;
+            min-height: 100vh;
+            touch-action: manipulation;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+            transition: all var(--game-transition-duration) ease;
+            background-image: linear-gradient(45deg, #fff8e1 25%, #fff3e0 25%, #fff3e0 50%, #fff8e1 50%, #fff8e1 75%, #fff3e0 75%, #fff3e0 100%);
+            background-size: 56.57px 56.57px;
+        }
+    
+        .game-container {
+            width: var(--container-width);
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+        }
+    
+        .game-info {
+            width: 100%;
+            text-align: center;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 0.75rem;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px var(--shadow-color);
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+    
+        .phase-indicator {
+            font-size: clamp(1rem, 2.5vw, 1.25rem);
+            color: var(--tg-theme-button-color);
+            padding: 0.75rem;
+            border-radius: 0.75rem;
+            background: rgba(255, 160, 0, 0.1);
+            box-shadow: 0 4px 6px var(--shadow-color);
+            border: 2px solid var(--cell-border-color);
+            margin: 0;
+        }
+    
+        .pieces-count {
+            font-size: clamp(0.875rem, 2vw, 1.125rem);
+            font-weight: bold;
+            color: var(--tg-theme-text-color);
+            text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5);
+            margin: 0;
+        }
+    
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: clamp(0.25rem, 1vw, 0.75rem);
+            width: 100%;
+            aspect-ratio: 1;
+            background: rgba(255, 255, 255, 0.9);
+            padding: clamp(0.5rem, 1.5vw, 1rem);
+            border-radius: 1rem;
+            box-shadow: 0 10px 20px var(--shadow-color);
+        }
+    
+        .cell {
+            aspect-ratio: 1;
+            border: 2px solid var(--cell-border-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: clamp(1.25rem, 4vw, 1.75rem);
+            font-weight: bold;
+            cursor: pointer;
+            background: #ffffff;
+            transition: all 0.3s ease;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 8px var(--shadow-color);
+            -webkit-tap-highlight-color: transparent;
+            color: var(--tg-theme-button-color);
+            position: relative;
+            overflow: hidden;
+        }
 
-    body {
-        background-color: var(--tg-theme-bg-color);
-        color: var(--tg-theme-text-color);
-        font-family: 'Segoe UI', Arial, sans-serif;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        margin: 0;
-        padding: 20px;
-        min-height: 100vh;
-        touch-action: manipulation;
-        -webkit-touch-callout: none;
-        -webkit-user-select: none;
-        user-select: none;
-        transition: all var(--game-transition-duration) ease;
-        background-image: linear-gradient(45deg, #fff8e1 25%, #fff3e0 25%, #fff3e0 50%, #fff8e1 50%, #fff8e1 75%, #fff3e0 75%, #fff3e0 100%);
-        background-size: 56.57px 56.57px;
-    }
-
-    .game-info {
-        text-align: center;
-        margin-bottom: 2rem;
-        width: 100%;
-        max-width: 42rem;
-        background: rgba(255, 255, 255, 0.8);
-        padding: 1rem;
-        border-radius: 1rem;
-        box-shadow: 0 4px 6px var(--shadow-color);
-    }
-
-    .phase-indicator {
-        font-size: 1.25rem;
-        color: var(--tg-theme-button-color);
-        margin: 1rem 0;
-        padding: 1rem;
-        border-radius: 0.75rem;
-        background: rgba(255, 160, 0, 0.1);
-        box-shadow: 0 4px 6px var(--shadow-color);
-        border: 2px solid var(--cell-border-color);
-    }
-
-    .pieces-count {
-        font-size: 1.125rem;
-        margin: 1rem 0;
-        font-weight: bold;
-        color: var(--tg-theme-text-color);
-        text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5);
-    }
-
-    .game-board {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 0.75rem;
-        max-width: 400px;
-        width: 95vw;
-        margin: 20px auto;
-        background: rgba(255, 255, 255, 0.9);
-        padding: 1rem;
-        border-radius: 1rem;
-        box-shadow: 0 10px 20px var(--shadow-color);
-        aspect-ratio: 1;
-    }
-
-    .cell {
-        aspect-ratio: 1;
-        border: 2px solid var(--cell-border-color);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.75rem;
-        font-weight: bold;
-        cursor: pointer;
-        background: #ffffff;
-        transition: all 0.3s ease;
-        border-radius: 0.75rem;
-        box-shadow: 0 4px 8px var(--shadow-color);
-        -webkit-tap-highlight-color: transparent;
-        color: var(--tg-theme-button-color);
-    }
-
-    .cell:hover:not(:disabled) {
+        .cell:hover:not(:disabled) {
         background-color: var(--highlight-color);
         transform: translateY(-2px);
         box-shadow: 0 6px 12px var(--shadow-color);
@@ -121,39 +133,50 @@
         background-color: rgba(76, 175, 80, 0.1);
     }
 
+    .cell.winner {
+        background-color: var(--winner-bg);
+        border-color: #4CAF50;
+        animation: pulse 1.5s infinite;
+    }
+
     .status {
-        margin: 1.5rem 0;
-        font-size: 1.25rem;
+        width: 100%;
+        font-size: clamp(1rem, 2.5vw, 1.25rem);
         font-weight: bold;
-        padding: 1.25rem;
+        padding: clamp(0.75rem, 2vw, 1.25rem);
         border-radius: 1rem;
         background: rgba(255, 160, 0, 0.1);
-        width: 80%;
         text-align: center;
         box-shadow: 0 4px 6px var(--shadow-color);
         border: 2px solid var(--cell-border-color);
+        margin: 0;
+        word-wrap: break-word;
+        box-sizing: border-box;
     }
 
     .button-container {
         display: flex;
-        gap: 1.5rem;
-        margin-top: 1.5rem;
+        gap: clamp(0.75rem, 2vw, 1.5rem);
+        width: 100%;
+        justify-content: center;
+        margin-top: 1rem;
     }
 
     .main-button {
         background: var(--tg-theme-button-color);
         color: var(--tg-theme-button-text-color);
         border: none;
-        padding: 1rem 2rem;
+        padding: clamp(0.5rem, 1.5vw, 1rem) clamp(1rem, 3vw, 2rem);
         border-radius: 0.75rem;
         cursor: pointer;
-        font-size: 1.125rem;
+        font-size: clamp(0.875rem, 2vw, 1.125rem);
         font-weight: bold;
         transition: all 0.3s ease;
-        min-width: 140px;
+        min-width: clamp(100px, 25vw, 140px);
         box-shadow: 0 4px 8px var(--shadow-color);
         text-transform: uppercase;
         letter-spacing: 0.5px;
+        white-space: nowrap;
     }
 
     .main-button:hover {
@@ -174,33 +197,69 @@
         text-shadow: 1px 1px 0 rgba(255, 255, 255, 0.5);
     }
 
-    /* Keep your existing animations */
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(0.95); }
+    }
 
-    @media (max-width: 640px) {
+    @keyframes bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-5px); }
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 360px) {
+        :root {
+            --container-width: 100%;
+        }
+
+        body {
+            padding: 5px;
+        }
+
         .game-board {
-            gap: 0.5rem;
-            padding: 0.75rem;
+            gap: 0.25rem;
+            padding: 0.35rem;
         }
 
         .cell {
-            font-size: 1.5rem;
             border-radius: 0.5rem;
         }
 
-        .status {
-            font-size: 1.125rem;
-            padding: 1rem;
-        }
-
         .main-button {
-            padding: 0.75rem 1.5rem;
-            font-size: 1rem;
-            min-width: 120px;
+            padding: 0.5rem;
+            min-width: 90px;
+            font-size: 0.75rem;
+        }
+    }
+
+    @media (min-width: 361px) and (max-width: 640px) {
+        body {
+            padding: 10px;
         }
 
-        .phase-indicator {
-            font-size: 1rem;
-            padding: 0.75rem;
+        .game-board {
+            gap: 0.35rem;
+            padding: 0.5rem;
+        }
+
+        .button-container {
+            gap: 1rem;
+        }
+    }
+
+    @media (min-width: 641px) {
+        :root {
+            --container-width: min(95%, 500px);
+        }
+
+        .cell:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 16px var(--shadow-color);
         }
     }
 
@@ -225,9 +284,15 @@
         .game-info, .game-board {
             background: rgba(0, 0, 0, 0.2);
         }
-    }
 
-    </style>
+        .status, .phase-indicator {
+            background: rgba(255, 160, 0, 0.1);
+            border-color: var(--tg-theme-button-color);
+        }
+    }
+</style>
+
+    
     
     
 </head>
