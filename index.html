@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jimp Tic Tac Toe</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --tg-theme-bg-color: #fff;
+            --tg-theme-text-color: #000;
+            --tg-theme-button-color: #2481cc;
+            --tg-theme-button-text-color: #fff;
+        }
+
+        body {
+            background-color: var(--tg-theme-bg-color);
+            color: var(--tg-theme-text-color);
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            touch-action: manipulation;
+        }
+
+        .game-board {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 5px;
+            max-width: 400px;
+            width: 95vw;
+            margin: 20px auto;
+        }
+
+        .cell {
+            aspect-ratio: 1;
+            border: 2px solid var(--tg-theme-button-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            cursor: pointer;
+            background: var(--tg-theme-bg-color);
+            transition: background-color 0.2s;
+        }
+
+        .cell:active {
+            background-color: rgba(36, 129, 204, 0.1);
+        }
+
+        .status {
+            margin: 20px 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .players {
+            margin: 10px 0;
+            text-align: center;
+        }
+
+        .join-btn, .reset-btn {
+            background: var(--tg-theme-button-color);
+            color: var(--tg-theme-button-text-color);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px;
+            transition: opacity 0.2s;
+        }
+
+        .join-btn:active, .reset-btn:active {
+            opacity: 0.8;
+        }
+
+        .disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="status" id="status">Waiting for players...</div>
+    <div class="players" id="players"></div>
+    <div id="game-board" class="game-board"></div>
+    <div>
+        <button class="join-btn" id="joinBtn">Join Game</button>
+        <button class="reset-btn" id="resetBtn">New Game</button>
+    </div>
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        let gameState = {
+            board: Array(4).fill().map(() => Array(4).fill('')),
+            currentPlayer: 'X',
+            gameEnded: false,
+            players: {},
+            mySymbol: null
+        };
+
+        function initializeGame() {
+            const board = document.getElementById('game-board');
+            board.innerHTML = '';
+            
+            for(let i = 0; i < 4; i++) {
+                for(let j = 0; j < 4; j++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    cell.dataset.row = i;
+                    cell.dataset.col = j;
+                    cell.addEventListener('click', handleCellClick);
+                    board.appendChild(cell);
+                }
+            }
+            updateBoard();
+            tg.ready();
+            tg.expand();
+
+            // Check if we're in a group chat
+            if (tg.initDataUnsafe.chat?.type === 'group' || 
+                tg.initDataUnsafe.chat?.type === 'supergroup') {
+                checkGameStatus();
+            }
+        }
+
+        function checkGameStatus() {
+            tg.sendData(JSON.stringify({
+                action: 'check_game',
+                chatId: tg.initDataUnsafe.chat?.id,
+                userId: tg.initDataUnsafe.user?.id
+            }));
+        }
+
+        function handleJoin() {
+            tg.sendData(JSON.stringify({
+                action: 'join',
+                chatId: tg.initDataUnsafe.chat?.id,
+                userId: tg.initDataUnsafe.user?.id,
+                username: tg.initDataUnsafe.user?.username
+            }));
+        }
+
+        function handleCellClick(event) {
+            if (gameState.gameEnded || gameState.currentPlayer !== gameState.mySymbol) return;
+            
+            const row = parseInt(event.target.dataset.row);
+            const col = parseInt(event.target.dataset.col);
+            
+            if (gameState.board[row][col] !== '') return;
+            
+            tg.sendData(JSON.stringify({
+                action: 'move',
+                row: row,
+                col: col,
+                symbol: gameState.mySymbol,
+                chatId: tg.initDataUnsafe.chat?.id,
+                userId: tg.initDataUnsafe.user?.id
+            }));
+        }
+
+        function updateBoard() {
+            const cells = document.getElementsByClassName('cell');
+            for(let i = 0; i < 4; i++) {
+                for(let j = 0; j < 4; j++) {
+                    const index = i * 4 + j;
+                    cells[index].textContent = gameState.board[i][j];
+                }
+            }
+        }
+
+        function updatePlayers() {
+            const playersDiv = document.getElementById('players');
+            playersDiv.innerHTML = Object.entries(gameState.players)
+                .map(([symbol, name]) => `${symbol}: ${name}`)
+                .join(' vs ');
+        }
+
+        document.getElementById('joinBtn').addEventListener('click', handleJoin);
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            tg.sendData(JSON.stringify({
+                action: 'reset',
+                chatId: tg.initDataUnsafe.chat?.id
+            }));
+        });
+
+        // Handle incoming updates
+        tg.onEvent('message', function(message) {
+            const data = JSON.parse(message);
+            
+            if (data.type === 'game_state') {
+                gameState = {...gameState, ...data.state};
+                updateBoard();
+                updatePlayers();
+                document.getElementById('status').textContent = data.message;
+            }
+            
+            if (data.type === 'symbol_assigned') {
+                gameState.mySymbol = data.symbol;
+            }
+        });
+
+        initializeGame();
+    </script>
+</body>
+</html>
