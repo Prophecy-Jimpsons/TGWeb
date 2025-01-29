@@ -313,20 +313,66 @@
         let tg = window.Telegram.WebApp;
         const API_URL = 'https://pjimpsons.pythonanywhere.com';
 
-        let gameState = {
-            board: Array(4).fill().map(() => Array(4).fill('')),
-            currentPlayer: 'X',
-            gameEnded: false,
-            players: {},
-            mySymbol: null,
-            phase: 'placement',
-            pieces: { X: 0, O: 0 },
-            selectedPiece: null,
-            lastMove: null,
-            lastActivityTime: Date.now(),
-            placementTimeout: 60000, // 1 minute in milliseconds
-            joinTimeout: 60000 // 1 minute for joining
-        };
+
+        class GameState {
+            constructor() {
+                this.state = {
+                    board: Array(4).fill(Array(4).fill('')),
+                    currentPlayer: '',
+                    mySymbol: null,
+                    phase: 'placement',
+                    pieces: { O: 0, X: 0 },
+                    selectedPiece: null,
+                    lastMove: null
+                };
+                this.lastUpdate = Date.now();
+                this.isProcessingMove = false;
+            }
+
+            shouldUpdate(newState) {
+                const now = Date.now();
+                if (now - this.lastUpdate < 100) return false; // Debounce 100ms
+                return JSON.stringify(this.state) !== JSON.stringify(newState);
+            }
+
+            update(newState) {
+                if (!this.shouldUpdate(newState)) return;
+                
+                this.state = newState;
+                this.lastUpdate = Date.now();
+                updateBoard();
+            }
+
+            isValidTurn() {
+                return (
+                    this.state.mySymbol && 
+                    this.state.currentPlayer === this.state.mySymbol && 
+                    !this.state.gameEnded
+                );
+            }
+
+            handleCellClick(event) {
+                if (!this.isValidTurn() || this.isProcessingMove) return;
+                
+                const row = parseInt(event.target.dataset.row);
+                const col = parseInt(event.target.dataset.col);
+                
+                try {
+                    this.isProcessingMove = true;
+                    if (this.state.phase === 'placement') {
+                        this.handlePlacement(row, col);
+                    } else {
+                        this.handleMovement(row, col);
+                    }
+                } finally {
+                    this.isProcessingMove = false;
+                }
+            }
+        }
+
+        const gameState = new GameState();
+
+        
     
         let isProcessingMove = false;
 
@@ -364,7 +410,7 @@
                     cell.className = 'cell';
                     cell.dataset.row = i;
                     cell.dataset.col = j;
-                    cell.addEventListener('click', handleCellClick);
+                    cell.addEventListener('click', (e) => gameState.handleCellClick(e));
                     board.appendChild(cell);
                 }
             }
@@ -451,7 +497,7 @@
         }
     }
     
-    async function handleCellClick(event) {
+    
     // Early validation
             if (!isValidMove()) return;
             
@@ -478,7 +524,7 @@
             } finally {
                 isProcessingMove = false;
             }
-        }
+        
 
         function isValidMove() {
             return (
@@ -579,18 +625,7 @@
 }
 
     
-    function updateGameState(newState) {
-        const oldSymbol = gameState.mySymbol;  // Store current symbol
-        Object.assign(gameState, newState);     // Update state
-        if (oldSymbol) {                       // If we had a symbol
-            gameState.mySymbol = oldSymbol;    // Restore it
-        }
-        updateBoard();
-        updateStatus();
-        updatePhaseIndicator();
-        updatePlayerDisplay();
-        console.log('Updated Game State:', gameState);
-    }
+    
     
     function updateBoard() {
     const cells = document.getElementsByClassName('cell');
