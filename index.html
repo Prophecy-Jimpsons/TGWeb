@@ -675,32 +675,23 @@ function getWinningPattern(board, winner) {
 }
 
     
-    function updateStatus() {
-        const statusDiv = document.getElementById('status');
-        if (gameState.gameEnded && gameState.winner) {
-            const winnerName = gameState.players[gameState.winner];
-            statusDiv.textContent = `${winnerName} (${gameState.winner}) has won! 🎉`;
-            statusDiv.classList.add('winner');
-            
-            // Start countdown
-            let countdown = 5;
-            const countdownInterval = setInterval(() => {
-                countdown--;
-                statusDiv.textContent = `${winnerName} (${gameState.winner}) has won! 🎉 Resetting in ${countdown}...`;
-                if (countdown <= 0) {
-                    clearInterval(countdownInterval);
-                }
-            }, 1000);
-        } else if (Object.keys(gameState.players).length < 2) {
-            statusDiv.textContent = 'Waiting for players...';
-            statusDiv.classList.remove('winner');
-        } else {
-            const isMyTurn = gameState.currentPlayer === gameState.mySymbol;
-            const currentPlayerName = gameState.players[gameState.currentPlayer];
-            statusDiv.textContent = isMyTurn ? 'Your turn!' : `Waiting for ${currentPlayerName}'s (${gameState.currentPlayer}) move...`;
-            statusDiv.classList.remove('winner');
+        function updateStatus() {
+            const statusDiv = document.getElementById('status');
+            if (gameState.gameEnded && gameState.winner) {
+                const winnerName = gameState.players[gameState.winner];
+                statusDiv.textContent = `${winnerName} (${gameState.winner}) has won! 🎉 Click New Game to play again`;
+                statusDiv.classList.add('winner');
+            } else if (Object.keys(gameState.players).length < 2) {
+                statusDiv.textContent = 'Waiting for players...';
+                statusDiv.classList.remove('winner');
+            } else {
+                const isMyTurn = gameState.currentPlayer === gameState.mySymbol;
+                const currentPlayerName = gameState.players[gameState.currentPlayer];
+                statusDiv.textContent = isMyTurn ? 'Your turn!' : `Waiting for ${currentPlayerName}'s (${gameState.currentPlayer}) move...`;
+                statusDiv.classList.remove('winner');
+            }
         }
-    }
+
 
 
 
