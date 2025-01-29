@@ -822,37 +822,36 @@
 
       // API handling with retry logic and caching
       async function makeApiCall(endpoint, data, retries = 3) {
-        for (let i = 0; i < retries; i++) {
-          try {
-            const response = await fetch(`${API_URL}/${endpoint}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ...data,
-                chatId: tg.initDataUnsafe.chat?.id || "default",
-                userId: tg.initDataUnsafe.user?.id,
-                timestamp: Date.now(),
-              }),
-            });
+        try {
+          const response = await fetch(`${API_URL}/${endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...data,
+              chatId: tg.initDataUnsafe.chat?.id || "default",
+              userId: tg.initDataUnsafe.user?.id,
+              timestamp: Date.now(),
+            }),
+          });
 
-            if (!response.ok) {
-              throw new Error(`HTTP error! status: ${response.status}`);
-            }
+          const result = await response.json();
 
-            const result = await response.json();
-            // Don't treat "already in game" as an error
-            if (
-              !result.success &&
-              !result.message.includes("already in the game")
-            ) {
-              throw new Error(result.message || "API call failed");
-            }
-            return result;
-          } catch (error) {
-            console.error(`Attempt ${i + 1} failed:`, error);
-            if (i === retries - 1) throw error;
-            await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+          // Handle "already in game" as a special case
+          if (
+            result.message &&
+            result.message.includes("already in the game")
+          ) {
+            return {
+              success: false,
+              isAlreadyJoined: true,
+              message: result.message,
+            };
           }
+
+          return result;
+        } catch (error) {
+          console.error("API call error:", error);
+          throw error;
         }
       }
 
@@ -902,14 +901,21 @@
       }
 
       async function handleJoin() {
+        // First check local state
+        if (gameState.state.mySymbol) {
+          document.getElementById(
+            "status"
+          ).textContent = `You are already in the game as ${gameState.state.mySymbol}`;
+          return;
+        }
+
         try {
           const response = await makeApiCall("join_game", {
             username: tg.initDataUnsafe.user?.username || "Player",
           });
 
-          if (response.message?.includes("already in the game")) {
-            document.getElementById("status").textContent =
-              "You are already in the game";
+          if (response.isAlreadyJoined) {
+            document.getElementById("status").textContent = response.message;
             return;
           }
 
