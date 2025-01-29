@@ -503,29 +503,33 @@
             }
 
             isValidMove(row, col) {
-                // First check if it's player's turn
-                if (!this.isValidTurn()) return false;
+                console.log('Move validation:', {
+                    phase: this.state.phase,
+                    currentPlayer: this.state.currentPlayer,
+                    mySymbol: this.state.mySymbol,
+                    selectedPiece: this.state.selectedPiece,
+                    targetCell: this.state.board[row][col]
+                });
 
                 if (this.state.phase === 'movement') {
-                    // If no piece is selected, only allow selecting own pieces
-                    if (!this.state.selectedPiece) {
-                        return this.state.board[row][col] === this.state.mySymbol;
+                    // If no piece selected and clicking own piece
+                    if (!this.state.selectedPiece && 
+                        this.state.board[row][col] === this.state.mySymbol) {
+                        return true;
                     }
                     
-                    // If piece is selected, validate movement rules
-                    const { row: fromRow, col: fromCol } = this.state.selectedPiece;
-                    const rowDiff = Math.abs(row - fromRow);
-                    const colDiff = Math.abs(col - fromCol);
-                    
-                    // Can only move one space at a time and target must be empty
-                    return (rowDiff <= 1 && colDiff <= 1) && 
-                        this.state.board[row][col] === '';
+                    // If piece selected, validate movement
+                    if (this.state.selectedPiece) {
+                        const { row: fromRow, col: fromCol } = this.state.selectedPiece;
+                        const rowDiff = Math.abs(row - fromRow);
+                        const colDiff = Math.abs(col - fromCol);
+                        return (rowDiff <= 1 && colDiff <= 1) && 
+                            this.state.board[row][col] === '';
+                    }
                 }
-
-                // Placement phase validation
-                return this.state.board[row][col] === '' && 
-                    this.state.pieces[this.state.mySymbol] < 4;
+                return false;
             }
+
 
 
             async processMoveQueue() {
