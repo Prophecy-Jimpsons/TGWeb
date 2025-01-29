@@ -595,6 +595,7 @@
         updateBoard();
         updateStatus();
         updatePhaseIndicator();
+        updatePlayerDisplay();
         console.log('Updated Game State:', gameState);
     }
     
@@ -677,17 +678,30 @@ function getWinningPattern(board, winner) {
         function updateStatus() {
             const statusDiv = document.getElementById('status');
             if (gameState.gameEnded) {
-                statusDiv.textContent = `Game Over! ${gameState.winner ? gameState.winner + ' wins!' : 'Draw!'}`;
+                const winnerName = gameState.players[gameState.winner] || gameState.winner;
+                statusDiv.textContent = `Game Over! ${winnerName} wins!`;
                 statusDiv.classList.add('winner');
             } else if (Object.keys(gameState.players).length < 2) {
                 statusDiv.textContent = 'Waiting for players...';
                 statusDiv.classList.remove('winner');
             } else {
                 const isMyTurn = gameState.currentPlayer === gameState.mySymbol;
-                statusDiv.textContent = isMyTurn ? 'Your turn!' : `Waiting for ${gameState.currentPlayer}'s move...`;
+                const currentPlayerName = gameState.players[gameState.currentPlayer];
+                statusDiv.textContent = isMyTurn ? 'Your turn!' : `Waiting for ${currentPlayerName}'s move...`;
                 statusDiv.classList.remove('winner');
             }
         }
+
+
+        function updatePlayerDisplay() {
+        const phaseDiv = document.getElementById('phaseIndicator');
+        const playersInfo = Object.entries(gameState.players)
+            .map(([symbol, name]) => `${symbol}: ${name}`)
+            .join(' vs ');
+        phaseDiv.innerHTML = `${playersInfo}<br>${gameState.phase === 'placement' ? 'Place your pieces' : 'Move your pieces'}`;
+    }
+
+
     
         function updatePhaseIndicator() {
             const phaseDiv = document.getElementById('phaseIndicator');
