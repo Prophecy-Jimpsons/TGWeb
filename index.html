@@ -472,11 +472,15 @@
                 });
 
                 if (Object.keys(delta).length > 0) {
+                    // Preserve mySymbol when updating state
+                    const currentSymbol = this.state.mySymbol;
                     this.state = {...this.state, ...newState};
+                    this.state.mySymbol = currentSymbol; // Keep the original mySymbol
                     this.lastUpdate = Date.now();
                     this.updateUI();
                 }
             }
+
 
             updateUI() {
                 requestAnimationFrame(() => {
@@ -722,19 +726,20 @@
                 });
                 
                 if (response.success) {
-                    const symbol = response.gameState.mySymbol;
-                    handleStateUpdate(response.gameState);
-                    gameState.state.mySymbol = symbol;
+                    // Set mySymbol before updating state
+                    gameState.state.mySymbol = response.gameState.mySymbol;
+                    gameState.update(response.gameState);
                     document.getElementById('status').textContent = 
-                        `You joined as ${symbol}`;
+                        `You joined as ${response.gameState.mySymbol}`;
                 } else {
                     document.getElementById('status').textContent = response.message;
                 }
             } catch (error) {
                 console.error('Join error:', error);
-                document.getElementById('status').textContent = 'Error joining game, please try again';
+                document.getElementById('status').textContent = 'Error joining game';
             }
         }
+
 
         async function resetGame() {
             try {
