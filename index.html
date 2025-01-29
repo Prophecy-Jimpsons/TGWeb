@@ -26,6 +26,9 @@
             padding: 20px;
             min-height: 100vh;
             touch-action: manipulation;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
         .game-info {
@@ -73,11 +76,13 @@
             font-weight: bold;
             cursor: pointer;
             background: var(--tg-theme-bg-color);
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             border-radius: 8px;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .cell:active {
+            background-color: rgba(36, 129, 204, 0.1);
             transform: scale(0.95);
         }
 
@@ -103,13 +108,6 @@
             text-align: center;
         }
 
-        .players {
-            margin: 10px 0;
-            text-align: center;
-            font-size: 16px;
-            font-weight: bold;
-        }
-
         .button-container {
             display: flex;
             gap: 15px;
@@ -125,26 +123,19 @@
             cursor: pointer;
             font-size: 16px;
             font-weight: bold;
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
             min-width: 120px;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .main-button:active {
             transform: scale(0.95);
-        }
-
-        .disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .game-rules {
-            margin-top: 20px;
-            font-size: 14px;
-            color: var(--tg-theme-text-color);
             opacity: 0.8;
-            text-align: center;
-            max-width: 400px;
+        }
+
+        .winner {
+            color: #4CAF50;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -153,7 +144,6 @@
         <div class="status" id="status">Welcome to Super Tic Tac Toe!</div>
         <div class="phase-indicator" id="phaseIndicator"></div>
         <div class="pieces-count" id="piecesCount"></div>
-        <div class="players" id="players"></div>
     </div>
     
     <div id="game-board" class="game-board"></div>
@@ -162,11 +152,6 @@
         <button class="main-button" id="joinBtn">Join Game</button>
         <button class="main-button" id="resetBtn">New Game</button>
     </div>
-
-    <div class="game-rules">
-        Win by forming: 4 in a row, 4 in a column, 4 in a diagonal, or a 2x2 square!
-    </div>
-
     <script>
         let tg = window.Telegram.WebApp;
         const API_URL = 'https://pjimpsons.pythonanywhere.com';
@@ -181,7 +166,9 @@
             selectedPiece: null,
             lastMove: null
         };
-
+    
+        let isProcessingMove = false;
+    
         function initializeGame() {
             const board = document.getElementById('game-board');
             board.innerHTML = '';
@@ -201,7 +188,7 @@
             tg.expand();
             checkGameStatus();
         }
-
+    
         async function checkGameStatus() {
             try {
                 const response = await fetch(`${API_URL}/get_game_state`, {
@@ -223,7 +210,7 @@
                 document.getElementById('status').textContent = 'Error connecting to game server';
             }
         }
-
+    
         async function handleJoin() {
             try {
                 const response = await fetch(`${API_URL}/join_game`, {
@@ -250,9 +237,9 @@
                 document.getElementById('status').textContent = 'Error joining game';
             }
         }
-
+    
         async function handleCellClick(event) {
-            if (gameState.gameEnded || gameState.currentPlayer !== gameState.mySymbol) return;
+            if (isProcessingMove || gameState.gameEnded || gameState.currentPlayer !== gameState.mySymbol) return;
             
             const row = parseInt(event.target.dataset.row);
             const col = parseInt(event.target.dataset.col);
@@ -261,7 +248,26 @@
                 if (gameState.pieces[gameState.mySymbol] >= 4) return;
                 if (gameState.board[row][col] !== '') return;
                 
-                makeMove(row, col);
+                // Update locally first
+                gameState.board[row][col] = gameState.mySymbol;
+                updateBoard();
+                
+                // Then send to server
+                isProcessingMove = true;
+                try {
+                    const success = await makeMove(row, col);
+                    if (!success) {
+                        // Revert if server rejected
+                        gameState.board[row][col] = '';
+                        updateBoard();
+                    }
+                } catch (error) {
+                    gameState.board[row][col] = '';
+                    updateBoard();
+                    console.error('Move failed:', error);
+                } finally {
+                    isProcessingMove = false;
+                }
             } else {
                 if (gameState.selectedPiece) {
                     if (row === gameState.selectedPiece.row && col === gameState.selectedPiece.col) {
@@ -270,7 +276,32 @@
                         return;
                     }
                     if (gameState.board[row][col] === '') {
-                        makeMove(row, col, gameState.selectedPiece);
+                        const oldRow = gameState.selectedPiece.row;
+                        const oldCol = gameState.selectedPiece.col;
+                        
+                        // Update locally first
+                        gameState.board[oldRow][oldCol] = '';
+                        gameState.board[row][col] = gameState.mySymbol;
+                        updateBoard();
+                        
+                        // Then send to server
+                        isProcessingMove = true;
+                        try {
+                            const success = await makeMove(row, col, gameState.selectedPiece);
+                            if (!success) {
+                                // Revert if server rejected
+                                gameState.board[oldRow][oldCol] = gameState.mySymbol;
+                                gameState.board[row][col] = '';
+                                updateBoard();
+                            }
+                        } catch (error) {
+                            gameState.board[oldRow][oldCol] = gameState.mySymbol;
+                            gameState.board[row][col] = '';
+                            updateBoard();
+                            console.error('Move failed:', error);
+                        } finally {
+                            isProcessingMove = false;
+                        }
                     }
                 } else {
                     if (gameState.board[row][col] === gameState.mySymbol) {
@@ -280,7 +311,7 @@
                 }
             }
         }
-
+    
         async function makeMove(row, col, selectedPiece = null) {
             try {
                 const response = await fetch(`${API_URL}/make_move`, {
@@ -301,23 +332,25 @@
                 if (data.success) {
                     gameState.selectedPiece = null;
                     updateGameState(data.gameState);
+                    return true;
                 } else {
                     document.getElementById('status').textContent = data.message;
+                    return false;
                 }
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('status').textContent = 'Error making move';
+                return false;
             }
         }
-
+    
         function updateGameState(newState) {
             gameState = {...gameState, ...newState};
             updateBoard();
-            updatePlayers();
             updateStatus();
             updatePhaseIndicator();
         }
-
+    
         function updateBoard() {
             const cells = document.getElementsByClassName('cell');
             for(let i = 0; i < 4; i++) {
@@ -341,26 +374,22 @@
                 }
             }
         }
-
-        function updatePlayers() {
-            const playersDiv = document.getElementById('players');
-            playersDiv.innerHTML = Object.entries(gameState.players)
-                .map(([symbol, name]) => `${symbol}: ${name}`)
-                .join(' vs ');
-        }
-
+    
         function updateStatus() {
             const statusDiv = document.getElementById('status');
             if (gameState.gameEnded) {
                 statusDiv.textContent = `Game Over! ${gameState.winner ? gameState.winner + ' wins!' : 'Draw!'}`;
+                statusDiv.classList.add('winner');
             } else if (Object.keys(gameState.players).length < 2) {
                 statusDiv.textContent = 'Waiting for players...';
+                statusDiv.classList.remove('winner');
             } else {
                 const isMyTurn = gameState.currentPlayer === gameState.mySymbol;
                 statusDiv.textContent = isMyTurn ? 'Your turn!' : `Waiting for ${gameState.currentPlayer}'s move...`;
+                statusDiv.classList.remove('winner');
             }
         }
-
+    
         function updatePhaseIndicator() {
             const phaseDiv = document.getElementById('phaseIndicator');
             const piecesDiv = document.getElementById('piecesCount');
@@ -373,7 +402,7 @@
             
             piecesDiv.textContent = `Pieces placed - X: ${gameState.pieces.X}/4, O: ${gameState.pieces.O}/4`;
         }
-
+    
         document.getElementById('joinBtn').addEventListener('click', handleJoin);
         document.getElementById('resetBtn').addEventListener('click', async () => {
             try {
@@ -398,11 +427,13 @@
                 document.getElementById('status').textContent = 'Error resetting game';
             }
         });
-
+    
         // Poll for game state updates
         setInterval(checkGameStatus, 1000);
-
+    
+        // Initialize the game
         initializeGame();
     </script>
-</body>
-</html>
+    </body>
+    </html>
+    
