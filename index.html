@@ -31,17 +31,23 @@
         .game-info {
             text-align: center;
             margin-bottom: 20px;
+            width: 100%;
+            max-width: 400px;
         }
 
         .phase-indicator {
             font-size: 16px;
             color: var(--tg-theme-button-color);
             margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(36, 129, 204, 0.1);
         }
 
         .pieces-count {
             font-size: 14px;
-            margin: 5px 0;
+            margin: 10px 0;
+            font-weight: bold;
         }
 
         .game-board {
@@ -51,6 +57,10 @@
             max-width: 400px;
             width: 95vw;
             margin: 20px auto;
+            background: var(--tg-theme-bg-color);
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
 
         .cell {
@@ -63,29 +73,33 @@
             font-weight: bold;
             cursor: pointer;
             background: var(--tg-theme-bg-color);
-            transition: all 0.2s ease;
+            transition: all 0.3s ease;
+            border-radius: 8px;
         }
 
         .cell:active {
-            background-color: var(--highlight-color);
+            transform: scale(0.95);
         }
 
         .cell.selected {
             background-color: var(--highlight-color);
+            border-color: var(--tg-theme-button-color);
+            transform: scale(1.05);
         }
 
         .cell.last-move {
             border-color: #4CAF50;
-        }
-
-        .cell.winning {
-            background-color: var(--win-highlight);
+            border-width: 3px;
         }
 
         .status {
             margin: 20px 0;
             font-size: 18px;
             font-weight: bold;
+            padding: 10px;
+            border-radius: 8px;
+            background: rgba(36, 129, 204, 0.1);
+            width: 100%;
             text-align: center;
         }
 
@@ -93,11 +107,12 @@
             margin: 10px 0;
             text-align: center;
             font-size: 16px;
+            font-weight: bold;
         }
 
         .button-container {
             display: flex;
-            gap: 10px;
+            gap: 15px;
             margin-top: 20px;
         }
 
@@ -109,16 +124,27 @@
             border-radius: 8px;
             cursor: pointer;
             font-size: 16px;
-            transition: opacity 0.2s;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            min-width: 120px;
         }
 
         .main-button:active {
-            opacity: 0.8;
+            transform: scale(0.95);
         }
 
         .disabled {
             opacity: 0.5;
             cursor: not-allowed;
+        }
+
+        .game-rules {
+            margin-top: 20px;
+            font-size: 14px;
+            color: var(--tg-theme-text-color);
+            opacity: 0.8;
+            text-align: center;
+            max-width: 400px;
         }
     </style>
 </head>
@@ -129,10 +155,16 @@
         <div class="pieces-count" id="piecesCount"></div>
         <div class="players" id="players"></div>
     </div>
+    
     <div id="game-board" class="game-board"></div>
+    
     <div class="button-container">
         <button class="main-button" id="joinBtn">Join Game</button>
         <button class="main-button" id="resetBtn">New Game</button>
+    </div>
+
+    <div class="game-rules">
+        Win by forming: 4 in a row, 4 in a column, 4 in a diagonal, or a 2x2 square!
     </div>
 
     <script>
@@ -209,6 +241,7 @@
                 if (data.success) {
                     gameState.mySymbol = data.gameState.mySymbol;
                     updateGameState(data.gameState);
+                    document.getElementById('status').textContent = `You joined as ${data.gameState.mySymbol}`;
                 } else {
                     document.getElementById('status').textContent = data.message;
                 }
@@ -229,10 +262,9 @@
                 if (gameState.board[row][col] !== '') return;
                 
                 makeMove(row, col);
-            } else { // movement phase
+            } else {
                 if (gameState.selectedPiece) {
                     if (row === gameState.selectedPiece.row && col === gameState.selectedPiece.col) {
-                        // Deselect piece
                         gameState.selectedPiece = null;
                         updateBoard();
                         return;
@@ -324,7 +356,8 @@
             } else if (Object.keys(gameState.players).length < 2) {
                 statusDiv.textContent = 'Waiting for players...';
             } else {
-                statusDiv.textContent = `${gameState.currentPlayer}'s turn`;
+                const isMyTurn = gameState.currentPlayer === gameState.mySymbol;
+                statusDiv.textContent = isMyTurn ? 'Your turn!' : `Waiting for ${gameState.currentPlayer}'s move...`;
             }
         }
 
@@ -332,8 +365,13 @@
             const phaseDiv = document.getElementById('phaseIndicator');
             const piecesDiv = document.getElementById('piecesCount');
             
-            phaseDiv.textContent = `Phase: ${gameState.phase === 'placement' ? 'Place your pieces' : 'Move your pieces'}`;
-            piecesDiv.textContent = `Pieces - X: ${gameState.pieces.X}/4, O: ${gameState.pieces.O}/4`;
+            if (gameState.phase === 'placement') {
+                phaseDiv.textContent = 'Phase: Place your pieces (4 each)';
+            } else {
+                phaseDiv.textContent = 'Phase: Move your pieces to win';
+            }
+            
+            piecesDiv.textContent = `Pieces placed - X: ${gameState.pieces.X}/4, O: ${gameState.pieces.O}/4`;
         }
 
         document.getElementById('joinBtn').addEventListener('click', handleJoin);
@@ -353,6 +391,7 @@
                     gameState.mySymbol = null;
                     gameState.selectedPiece = null;
                     updateGameState(data.gameState);
+                    document.getElementById('status').textContent = 'Game reset! Click Join Game to play.';
                 }
             } catch (error) {
                 console.error('Error:', error);
