@@ -349,6 +349,19 @@
             }
         }
 
+        async function checkGameState() {
+            try {
+                const response = await makeApiCall('get_game_state', {});
+                if (response.success) {
+                    handleStateUpdate(response.gameState);
+                }
+            } catch (error) {
+                console.error('State check error:', error);
+                document.getElementById('status').textContent = 'Connection error, retrying...';
+            }
+        }
+
+
         // Initialize polling mechanism
         function initializePolling() {
             if (isPolling) return;
@@ -360,7 +373,7 @@
                 try {
                     const currentTime = Date.now();
                     if (currentTime - lastStateUpdate >= POLLING_INTERVAL) {
-                        await checkGameState();
+                        await throttledGameStateCheck();
                         lastStateUpdate = currentTime;
                     }
                 } catch (error) {
@@ -377,6 +390,13 @@
 
             pollGameState();
         }
+
+
+        function updateGameState(newState) {
+            if (!newState || typeof newState !== 'object') return;
+            gameState.update(newState);
+        }
+
 
         // Handle state updates
         function handleStateUpdate(newState) {
