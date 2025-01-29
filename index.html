@@ -840,11 +840,14 @@
             }
 
             const result = await response.json();
-            if (result.success) {
-              return result;
-            } else {
+            // Don't treat "already in game" as an error
+            if (
+              !result.success &&
+              !result.message.includes("already in the game")
+            ) {
               throw new Error(result.message || "API call failed");
             }
+            return result;
           } catch (error) {
             console.error(`Attempt ${i + 1} failed:`, error);
             if (i === retries - 1) throw error;
@@ -900,17 +903,15 @@
 
       async function handleJoin() {
         try {
-          // Check if user is already in the game
-          if (gameState.state.players[gameState.state.mySymbol]) {
-            document.getElementById(
-              "status"
-            ).textContent = `You are already in the game as ${gameState.state.mySymbol}`;
-            return;
-          }
-
           const response = await makeApiCall("join_game", {
             username: tg.initDataUnsafe.user?.username || "Player",
           });
+
+          if (response.message?.includes("already in the game")) {
+            document.getElementById("status").textContent =
+              "You are already in the game";
+            return;
+          }
 
           if (response.success) {
             gameState.state.mySymbol = response.gameState.mySymbol;
