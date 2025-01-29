@@ -452,45 +452,9 @@
                 this.processingQueue = false;
             }
 
-            // Process moves in queue
-            async processMoveQueue() {
-                if (this.processingQueue || this.moveQueue.length === 0) return;
-                
-                this.processingQueue = true;
-                while (this.moveQueue.length > 0) {
-                    const move = this.moveQueue.shift();
-                    try {
-                        await this.processMove(move);
-                    } catch (error) {
-                        console.error('Move processing error:', error);
-                        // Requeue failed moves if they're still valid
-                        if (this.isValidMove(move.row, move.col)) {
-                            this.moveQueue.unshift(move);
-                        }
-                    }
-                }
-                this.processingQueue = false;
-            }
-
-            // Add move to queue
-            queueMove(move) {
-                this.moveQueue.push(move);
-                this.processMoveQueue();
-            }
-
-            async processMove(move) {
-                const { row, col, type } = move;
-                if (type === 'placement') {
-                    return await this.handlePlacement(row, col);
-                } else {
-                    return await this.handleMovement(row, col);
-                }
-            }
-
             shouldUpdate(newState) {
                 if (!newState || Date.now() - this.lastUpdate < 100) return false;
                 
-                // Compare only relevant state changes
                 const relevantKeys = ['board', 'currentPlayer', 'phase', 'pieces', 'gameEnded', 'winner'];
                 return relevantKeys.some(key => 
                     JSON.stringify(this.state[key]) !== JSON.stringify(newState[key])
@@ -500,7 +464,6 @@
             update(newState) {
                 if (!this.shouldUpdate(newState)) return;
 
-                // Create delta update for efficiency
                 const delta = {};
                 Object.keys(newState).forEach(key => {
                     if (JSON.stringify(this.state[key]) !== JSON.stringify(newState[key])) {
@@ -508,7 +471,6 @@
                     }
                 });
 
-                // Only update if there are actual changes
                 if (Object.keys(delta).length > 0) {
                     this.state = {...this.state, ...newState};
                     this.lastUpdate = Date.now();
@@ -530,43 +492,101 @@
                     this.state.mySymbol && 
                     this.state.currentPlayer === this.state.mySymbol && 
                     !this.state.gameEnded &&
-                    !this.isProcessingMove
+                    !this.isProcessingMove &&
+                    (this.state.phase === 'placement' ? 
+                        this.state.pieces[this.state.mySymbol] < 4 : true)
                 );
             }
 
             isValidMove(row, col) {
+                if (!this.isValidTurn()) return false;
+
                 if (this.state.phase === 'placement') {
                     return this.state.board[row][col] === '' && 
-                           this.state.pieces[this.state.mySymbol] < 4;
+                        this.state.pieces[this.state.mySymbol] < 4;
                 } else {
                     if (!this.state.selectedPiece) {
                         return this.state.board[row][col] === this.state.mySymbol;
                     }
-                    // Validate movement phase moves
                     const { row: fromRow, col: fromCol } = this.state.selectedPiece;
                     const rowDiff = Math.abs(row - fromRow);
                     const colDiff = Math.abs(col - fromCol);
                     return (rowDiff <= 1 && colDiff <= 1) && 
-                           this.state.board[row][col] === '';
+                        this.state.board[row][col] === '';
                 }
             }
 
-            handleCellClick = debounce(async (event) => {
-                if (!this.isValidTurn()) return;
+            async processMoveQueue() {
+                if (this.processingQueue || this.moveQueue.length === 0) return;
+                
+                this.processingQueue = true;
+                while (this.moveQueue.length > 0) {
+                    const move = this.moveQueue.shift();
+                    try {
+                        await this.processMove(move);
+                    } catch (error) {
+                        console.error('Move processing error:', error);
+                        if (this.isValidMove(move.row, move.col)) {
+                            this.moveQueue.unshift(move);
+                        }
+                    }
+                }
+                this.processingQueue = false;
+            }
+
+            queueMove(move) {
+                this.moveQueue.push(move);
+                this.processMoveQueue();
+            }
+
+            async processMove(move) {
+                const { row, col, type } = move;
+                let result;
+
+                if (type === 'placement') {
+                    result = await this.handlePlacement(row, col);
+                } else {
+                    result = await this.handleMovement(row, col);
+                }
+
+                if (result) {
+                    this.state.lastMove = [row, col];
+                    this.updateUI();
+                }
+
+                return result;
+            }
+
+            async handleCellClick(event) {
+                if (!this.isValidTurn()) {
+                    console.log('Not valid turn:', {
+                        mySymbol: this.state.mySymbol,
+                        currentPlayer: this.state.currentPlayer,
+                        gameEnded: this.state.gameEnded,
+                        isProcessingMove: this.isProcessingMove,
+                        pieces: this.state.pieces
+                    });
+                    return;
+                }
 
                 const row = parseInt(event.target.dataset.row);
                 const col = parseInt(event.target.dataset.col);
 
-                if (!this.isValidMove(row, col)) return;
+                if (!this.isValidMove(row, col)) {
+                    console.log('Invalid move:', { row, col });
+                    return;
+                }
 
                 try {
                     this.isProcessingMove = true;
                     const moveType = this.state.phase === 'placement' ? 'placement' : 'movement';
-                    this.queueMove({ row, col, type: moveType });
+                    await this.processMove({ row, col, type: moveType });
+                } catch (error) {
+                    console.error('Move processing error:', error);
                 } finally {
                     this.isProcessingMove = false;
                 }
-            }, 250);
+            }
 
             async handlePlacement(row, col) {
                 if (!this.isValidMove(row, col)) return false;
@@ -589,7 +609,33 @@
 
                 return false;
             }
+
+            async makeMove(row, col, selectedPiece = null) {
+                try {
+                    const response = await makeApiCall('make_move', {
+                        row, 
+                        col,
+                        symbol: this.state.mySymbol,
+                        selectedPiece,
+                        chatId: tg.initDataUnsafe.chat?.id || 'default',
+                        userId: tg.initDataUnsafe.user?.id
+                    });
+
+                    if (response.success) {
+                        this.update(response.gameState);
+                        return true;
+                    }
+                    
+                    document.getElementById('status').textContent = response.message;
+                    return false;
+                } catch (error) {
+                    console.error('Move error:', error);
+                    document.getElementById('status').textContent = 'Error making move';
+                    return false;
+                }
+            }
         }
+
 
         const gameState = new GameState();
 
