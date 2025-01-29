@@ -900,12 +900,19 @@
 
       async function handleJoin() {
         try {
+          // Check if user is already in the game
+          if (gameState.state.players[gameState.state.mySymbol]) {
+            document.getElementById(
+              "status"
+            ).textContent = `You are already in the game as ${gameState.state.mySymbol}`;
+            return;
+          }
+
           const response = await makeApiCall("join_game", {
             username: tg.initDataUnsafe.user?.username || "Player",
           });
 
           if (response.success) {
-            // Set mySymbol before updating state
             gameState.state.mySymbol = response.gameState.mySymbol;
             gameState.update(response.gameState);
             document.getElementById(
@@ -924,9 +931,27 @@
         try {
           const response = await makeApiCall("reset_game", {});
           if (response.success) {
-            gameState.state.mySymbol = null;
-            gameState.state.selectedPiece = null;
-            handleStateUpdate(response.gameState);
+            // Reset local game state
+            gameState.state = {
+              board: Array(4)
+                .fill()
+                .map(() => Array(4).fill("")),
+              currentPlayer: "",
+              mySymbol: null,
+              phase: "placement",
+              pieces: { O: 0, X: 0 },
+              selectedPiece: null,
+              lastMove: null,
+              gameEnded: false,
+              winner: null,
+              players: {},
+              joinTimeout: 60000,
+              placementTimeout: 60000,
+              lastActivityTime: Date.now(),
+            };
+            gameState.update(response.gameState);
+            document.getElementById("status").textContent =
+              "Game has been reset. Click Join Game to play.";
           }
         } catch (error) {
           console.error("Reset error:", error);
