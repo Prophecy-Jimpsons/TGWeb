@@ -547,19 +547,36 @@
                 const { row, col, type } = move;
                 let result;
 
-                if (type === 'placement') {
-                    result = await this.handlePlacement(row, col);
-                } else {
-                    result = await this.handleMovement(row, col);
-                }
+                try {
+                    console.log('Processing move:', { row, col, type });
+                    
+                    if (type === 'placement') {
+                        // Direct call to makeMove instead of handlePlacement
+                        result = await makeMove(row, col);
+                    } else {
+                        if (!this.state.selectedPiece) {
+                            this.state.selectedPiece = {row, col};
+                            this.updateUI();
+                            return true;
+                        }
+                        result = await makeMove(row, col, this.state.selectedPiece);
+                        this.state.selectedPiece = null;
+                    }
 
-                if (result) {
-                    this.state.lastMove = [row, col];
-                    this.updateUI();
-                }
+                    console.log('Move result:', result);
 
-                return result;
+                    if (result) {
+                        this.state.lastMove = [row, col];
+                        this.updateUI();
+                    }
+
+                    return result;
+                } catch (error) {
+                    console.error('Move processing error:', error);
+                    return false;
+                }
             }
+
 
             async handleCellClick(event) {
                 if (!this.isValidTurn()) {
@@ -575,6 +592,8 @@
 
                 const row = parseInt(event.target.dataset.row);
                 const col = parseInt(event.target.dataset.col);
+
+                console.log('Attempting move:', { row, col });
 
                 if (!this.isValidMove(row, col)) {
                     console.log('Invalid move:', { row, col });
