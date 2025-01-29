@@ -212,13 +212,17 @@
         }
     
         async function handleJoin() {
-            try {
-                const response = await fetch(`${API_URL}/join_game`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
+        if (gameState.mySymbol) {
+            document.getElementById('status').textContent = `Already joined as ${gameState.mySymbol}`;
+            return;
+        }
+        try {
+            const response = await fetch(`${API_URL}/join_game`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
                         chatId: tg.initDataUnsafe.chat?.id || 'default',
                         userId: tg.initDataUnsafe.user?.id,
                         username: tg.initDataUnsafe.user?.username || 'Player'
@@ -239,7 +243,13 @@
         }
     
         async function handleCellClick(event) {
-            if (isProcessingMove || gameState.gameEnded || gameState.currentPlayer !== gameState.mySymbol) return;
+        if (!gameState.mySymbol || isProcessingMove || gameState.gameEnded || gameState.currentPlayer !== gameState.mySymbol) return;
+        console.log('Processing move:', {
+            currentPlayer: gameState.currentPlayer,
+            mySymbol: gameState.mySymbol,
+            phase: gameState.phase
+        });
+
             
             const row = parseInt(event.target.dataset.row);
             const col = parseInt(event.target.dataset.col);
@@ -311,10 +321,16 @@
                 }
             }
         }
+        
     
         async function makeMove(row, col, selectedPiece = null) {
-            try {
-                const response = await fetch(`${API_URL}/make_move`, {
+        console.log('Making move:', {
+            row, col, selectedPiece,
+            currentState: gameState
+        });
+        try {
+            const response = await fetch(`${API_URL}/make_move`, {
+
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -343,13 +359,28 @@
                 return false;
             }
         }
+
+        function logGameState() {
+        console.log('Current Game State:', {
+            phase: gameState.phase,
+            currentPlayer: gameState.currentPlayer,
+            mySymbol: gameState.mySymbol,
+            pieces: gameState.pieces,
+            board: gameState.board
+        });
+}
+
     
         function updateGameState(newState) {
-            gameState = {...gameState, ...newState};
-            updateBoard();
-            updateStatus();
-            updatePhaseIndicator();
+        const oldSymbol = gameState.mySymbol; // Preserve mySymbol
+        gameState = {...gameState, ...newState};
+        gameState.mySymbol = oldSymbol; // Restore mySymbol
+        updateBoard();
+        updateStatus();
+        updatePhaseIndicator();
+        logGameState();
         }
+
     
         function updateBoard() {
             const cells = document.getElementsByClassName('cell');
