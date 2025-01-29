@@ -617,21 +617,33 @@
             }
 
             async handleMovement(row, col) {
-                if (!this.state.selectedPiece && 
-                    this.state.board[row][col] === this.state.mySymbol) {
-                    this.state.selectedPiece = {row, col};
-                    this.updateUI();
-                    return true;
-                }
-                
-                if (this.state.selectedPiece && this.isValidMove(row, col)) {
-                    const result = await makeMove(row, col, this.state.selectedPiece);
-                    this.state.selectedPiece = null;
-                    return result;
-                }
-
-                return false;
+            // If clicking on an already selected piece, deselect it
+            if (this.state.selectedPiece && 
+                row === this.state.selectedPiece.row && 
+                col === this.state.selectedPiece.col) {
+                this.state.selectedPiece = null;
+                this.updateUI();
+                return true;
             }
+            
+            // If no piece is selected and clicking on own piece, select it
+            if (!this.state.selectedPiece && 
+                this.state.board[row][col] === this.state.mySymbol) {
+                this.state.selectedPiece = {row, col};
+                this.updateUI();
+                return true;
+            }
+            
+            // If piece is selected and clicking on valid move location
+            if (this.state.selectedPiece && this.isValidMove(row, col)) {
+                const result = await makeMove(row, col, this.state.selectedPiece);
+                this.state.selectedPiece = null;
+                return result;
+            }
+
+            return false;
+        }
+
 
             async makeMove(row, col, selectedPiece = null) {
                 try {
