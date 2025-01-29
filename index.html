@@ -371,15 +371,17 @@
 }
 
     
-        function updateGameState(newState) {
-        const oldSymbol = gameState.mySymbol; // Preserve mySymbol
+    function updateGameState(newState) {
+        const oldSymbol = gameState.mySymbol;  // Preserve mySymbol
         gameState = {...gameState, ...newState};
-        gameState.mySymbol = oldSymbol; // Restore mySymbol
+        if (oldSymbol) {
+            gameState.mySymbol = oldSymbol;  // Restore mySymbol
+        }
         updateBoard();
         updateStatus();
         updatePhaseIndicator();
-        logGameState();
-        }
+        console.log('Updated Game State:', gameState);  // Debug log
+    }
 
     
         function updateBoard() {
