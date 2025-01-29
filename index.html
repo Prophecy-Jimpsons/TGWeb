@@ -333,11 +333,6 @@
         function checkTimeouts() {
             const currentTime = Date.now();
             
-            // Check for game completion
-            if (gameState.gameEnded) {
-                setTimeout(() => resetGame(), 3000); // Reset 3 seconds after game ends
-                return;
-            }
 
             // Check for inactive game or incomplete joins
             if (Object.keys(gameState.players).length < 2) {
