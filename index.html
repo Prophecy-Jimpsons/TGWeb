@@ -343,19 +343,33 @@
     <script>
       let tg = window.Telegram.WebApp;
       const API_URL = "https://pjimpsons.pythonanywhere.com";
+      const updateQueue = new Set();
       let lastStateUpdate = Date.now();
       const POLLING_INTERVAL = 1000; // 1 second
       const RETRY_INTERVAL = 2000; // 2 seconds
       let retryCount = 0;
       const MAX_RETRIES = 3;
-      let isPolling = false;
 
-      // Cache for storing game state
-      const stateCache = {
-        lastFullState: null,
-        lastUpdateTime: 0,
-        CACHE_DURATION: 5000, // 5 seconds
-      };
+      let pollInterval;
+
+      function startPolling() {
+        if (pollInterval) stopPolling();
+        pollInterval = setInterval(async () => {
+          if (
+            !document.hidden &&
+            navigator.onLine &&
+            !gameState.isProcessingMove
+          ) {
+            try {
+              await checkGameState();
+            } catch (error) {
+              console.error("Polling error:", error);
+              stopPolling();
+              await recoverGameState();
+            }
+          }
+        }, POLLING_INTERVAL);
+      }
 
       // Debounce function for handling rapid state updates
       function debounce(func, wait) {
@@ -382,85 +396,24 @@
         };
       }
 
-      async function checkGameState() {
+      async function checkGameState(retryCount = 0) {
         try {
           const response = await makeApiCall("get_game_state", {});
           if (response.success) {
-            handleStateUpdate(response.gameState);
+            gameState.update(response.gameState);
+            return true;
           }
         } catch (error) {
-          console.error("State check error:", error);
-          document.getElementById("status").textContent =
-            "Connection error, retrying...";
+          const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000);
+          await new Promise((resolve) => setTimeout(resolve, backoffTime));
+          if (retryCount < 3) return checkGameState(retryCount + 1);
         }
-      }
-
-      // Initialize polling mechanism
-      function initializePolling() {
-        if (isPolling) return;
-        isPolling = true;
-
-        const pollGameState = async () => {
-          if (!isPolling) return;
-
-          try {
-            const currentTime = Date.now();
-            if (currentTime - lastStateUpdate >= POLLING_INTERVAL) {
-              await throttledGameStateCheck();
-              lastStateUpdate = currentTime;
-            }
-          } catch (error) {
-            console.error("Polling error:", error);
-            if (++retryCount >= MAX_RETRIES) {
-              isPolling = false;
-              console.error("Max retries reached, stopping polling");
-              return;
-            }
-          }
-
-          setTimeout(pollGameState, POLLING_INTERVAL);
-        };
-
-        pollGameState();
-      }
-
-      function updateGameState(newState) {
-        if (!newState || typeof newState !== "object") return;
-        gameState.update(newState);
-      }
-
-      // Handle state updates
-      function handleStateUpdate(newState) {
-        if (!newState) return;
-
-        const currentTime = Date.now();
-        if (
-          !stateCache.lastFullState ||
-          currentTime - stateCache.lastUpdateTime >= stateCache.CACHE_DURATION
-        ) {
-          stateCache.lastFullState = newState;
-          stateCache.lastUpdateTime = currentTime;
-          updateGameState(newState);
-        } else {
-          // Compare and update only changed properties
-          const hasChanges = Object.keys(newState).some(
-            (key) =>
-              JSON.stringify(stateCache.lastFullState[key]) !==
-              JSON.stringify(newState[key])
-          );
-
-          if (hasChanges) {
-            stateCache.lastFullState = newState;
-            stateCache.lastUpdateTime = currentTime;
-            updateGameState(newState);
-          }
-        }
+        return false;
       }
 
       // Initialize the game
       document.addEventListener("DOMContentLoaded", () => {
         initializeGame();
-        initializePolling();
       });
 
       class GameState {
@@ -506,68 +459,67 @@
         }
 
         update(newState) {
-          // Early validation
-          if (!newState || typeof newState !== "object") return;
-          if (!this.shouldUpdate(newState)) return;
+          if (!this.validateState(newState)) return;
 
-          try {
-            // Create deep copy of current state for comparison
-            const prevState = JSON.parse(JSON.stringify(this.state));
-            const currentSymbol = this.state.mySymbol;
-            const currentSelectedPiece = this.state.selectedPiece;
+          const changes = this.detectStateChanges(newState);
+          if (Object.keys(changes).length === 0) return;
 
-            // Track meaningful changes
-            const delta = {};
-            const significantKeys = [
-              "board",
-              "currentPlayer",
-              "phase",
-              "pieces",
-              "gameEnded",
-              "winner",
-              "lastMove",
-            ];
+          this.state = {
+            ...this.state,
+            ...changes,
+            mySymbol: this.state.mySymbol,
+            selectedPiece: this.state.selectedPiece,
+          };
 
-            significantKeys.forEach((key) => {
-              if (
-                JSON.stringify(prevState[key]) !== JSON.stringify(newState[key])
-              ) {
-                delta[key] = newState[key];
-              }
-            });
+          requestAnimationFrame(() => {
+            this.updateUI();
+            this.lastUpdate = Date.now();
+          });
+        }
 
-            // Only update if there are meaningful changes
-            if (Object.keys(delta).length > 0) {
-              // Update state while preserving local properties
-              this.state = {
-                ...this.state,
-                ...newState,
-                mySymbol: currentSymbol,
-                selectedPiece: currentSelectedPiece,
-              };
+        validateState(newState) {
+          return (
+            newState &&
+            typeof newState === "object" &&
+            Array.isArray(newState.board) &&
+            newState.board.length === 4
+          );
+        }
 
-              // Log state changes for debugging
-              console.log("State updated:", {
-                changes: delta,
-                currentPlayer: this.state.currentPlayer,
-                mySymbol: this.state.mySymbol,
-                phase: this.state.phase,
-              });
+        detectStateChanges(newState) {
+          const changes = {};
+          const keys = [
+            "board",
+            "currentPlayer",
+            "phase",
+            "pieces",
+            "gameEnded",
+            "winner",
+          ];
 
-              this.lastUpdate = Date.now();
-              this.updateUI();
+          keys.forEach((key) => {
+            if (
+              JSON.stringify(this.state[key]) !== JSON.stringify(newState[key])
+            ) {
+              changes[key] = newState[key];
             }
-          } catch (error) {
-            console.error("State update error:", error);
-          }
+          });
+          return changes;
         }
 
         updateUI() {
+          if (updateQueue.size > 0) return;
+
+          ["board", "status", "players", "phase"].forEach((type) =>
+            updateQueue.add(type)
+          );
+
           requestAnimationFrame(() => {
-            updateBoard();
-            updateStatus();
-            updatePlayerDisplay();
-            updatePhaseIndicator();
+            if (updateQueue.has("board")) updateBoard();
+            if (updateQueue.has("status")) updateStatus();
+            if (updateQueue.has("players")) updatePlayerDisplay();
+            if (updateQueue.has("phase")) updatePhaseIndicator();
+            updateQueue.clear();
           });
         }
 
@@ -855,29 +807,12 @@
         }
       }
 
-      // Efficient polling with throttling
-      const throttledGameStateCheck = throttle(async () => {
-        try {
-          const response = await makeApiCall("get_game_state", {});
-          if (response.success) {
-            handleStateUpdate(response.gameState);
-          }
-        } catch (error) {
-          console.error("State check error:", error);
-          document.getElementById("status").textContent =
-            "Connection error, retrying...";
-        }
-      }, POLLING_INTERVAL);
-
-      async function checkGameStatus() {
-        if (Date.now() - lastStateUpdate >= POLLING_INTERVAL) {
-          await throttledGameStateCheck();
-        }
-      }
-
       // Game actions with proper error handling
       async function makeMove(row, col, selectedPiece = null) {
+        if (gameState.isProcessingMove) return false;
+
         try {
+          gameState.isProcessingMove = true;
           const response = await makeApiCall("make_move", {
             row,
             col,
@@ -886,7 +821,7 @@
           });
 
           if (response.success) {
-            handleStateUpdate(response.gameState);
+            gameState.update(response.gameState);
             return true;
           }
 
@@ -894,14 +829,15 @@
           return false;
         } catch (error) {
           console.error("Move error:", error);
-          document.getElementById("status").textContent =
-            "Error making move, please try again";
+          document.getElementById("status").textContent = "Error making move";
           return false;
+        } finally {
+          gameState.isProcessingMove = false;
         }
       }
 
+      // Replace current handleJoin with this version
       async function handleJoin() {
-        // First check local state
         if (gameState.state.mySymbol) {
           document.getElementById(
             "status"
@@ -910,24 +846,18 @@
         }
 
         try {
-          const response = await makeApiCall("join_game", {
-            username: tg.initDataUnsafe.user?.username || "Player",
-          });
-
-          if (response.isAlreadyJoined) {
-            document.getElementById("status").textContent = response.message;
-            return;
-          }
+          const username =
+            tg.initDataUnsafe.user?.username || (await getUserName());
+          const response = await makeApiCall("join_game", { username });
 
           if (response.success) {
             gameState.state.mySymbol = response.gameState.mySymbol;
             gameState.update(response.gameState);
-            document.getElementById(
-              "status"
-            ).textContent = `You joined as ${response.gameState.mySymbol}`;
-          } else {
-            document.getElementById("status").textContent = response.message;
+            startPolling();
           }
+          document.getElementById("status").textContent = response.success
+            ? `You joined as ${response.gameState.mySymbol}`
+            : response.message;
         } catch (error) {
           console.error("Join error:", error);
           document.getElementById("status").textContent = "Error joining game";
@@ -1171,6 +1101,7 @@
         const board = document.getElementById("game-board");
         board.innerHTML = "";
 
+        const fragment = document.createDocumentFragment();
         for (let i = 0; i < 4; i++) {
           for (let j = 0; j < 4; j++) {
             const cell = document.createElement("div");
@@ -1178,22 +1109,20 @@
             cell.dataset.row = i;
             cell.dataset.col = j;
             cell.addEventListener("click", (e) => gameState.handleCellClick(e));
-            board.appendChild(cell);
+            fragment.appendChild(cell);
           }
         }
+        board.appendChild(fragment);
 
         updateBoard();
         tg.ready();
         tg.expand();
-        checkGameStatus();
+        startPolling();
       }
 
       // Event Listeners
       document.getElementById("joinBtn").addEventListener("click", handleJoin);
       document.getElementById("resetBtn").addEventListener("click", resetGame);
-
-      // Start game polling
-      setInterval(checkGameStatus, POLLING_INTERVAL);
 
       // Initialize game
       initializeGame();
