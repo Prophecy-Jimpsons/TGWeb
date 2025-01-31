@@ -352,6 +352,59 @@
 
       let pollInterval;
 
+      function stopPolling() {
+        // Clear the polling interval
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
+        }
+
+        // Reset retry count
+        retryCount = 0;
+
+        // Clear any pending state updates
+        if (updateQueue) {
+          updateQueue.clear();
+        }
+
+        // Remove visibility change listener if exists
+        document.removeEventListener(
+          "visibilitychange",
+          handleVisibilityChange
+        );
+
+        // Reset connection state
+        isPolling = false;
+
+        return new Promise((resolve) => {
+          // Ensure any pending operations are completed
+          setTimeout(() => {
+            console.log("Polling stopped successfully");
+            resolve();
+          }, 0);
+        });
+      }
+
+      // Helper function to handle visibility changes
+      function handleVisibilityChange() {
+        if (document.hidden) {
+          stopPolling();
+        } else {
+          startPolling();
+        }
+      }
+
+      // Add visibility change listener when game starts
+      function initializePollingListeners() {
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+      }
+
+      // Usage in cleanup
+      async function cleanup() {
+        await stopPolling();
+        // Additional cleanup if needed
+      }
+
       function startPolling() {
         if (pollInterval) stopPolling();
         pollInterval = setInterval(async () => {
