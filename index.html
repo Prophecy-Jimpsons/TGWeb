@@ -552,7 +552,6 @@
           );
         }
 
-        // Add proper validation
         validatePlacement(position) {
           const piecesPlaced = this.countPieces(this.state.mySymbol);
           return {
@@ -561,8 +560,17 @@
             piecesPlaced,
             isValid:
               piecesPlaced < 4 &&
-              this.state.board[position.row][position.col] === "",
+              this.state.board[position.row][position.col] === "" &&
+              this.state.currentPlayer === this.state.mySymbol,
           };
+        }
+
+        countPieces(symbol) {
+          return this.state.board.reduce(
+            (count, row) =>
+              count + row.filter((cell) => cell === symbol).length,
+            0
+          );
         }
 
         update(newState) {
@@ -723,6 +731,7 @@
               col: move.col,
               type: move.type,
               symbol: this.state.mySymbol,
+              phase: this.state.phase,
             });
 
             if (response.success) {
@@ -731,7 +740,7 @@
             }
             return false;
           } catch (error) {
-            console.error("Move error:", error);
+            console.error("Move processing error:", error);
             return false;
           } finally {
             this.isProcessingMove = false;
