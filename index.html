@@ -399,6 +399,47 @@
         document.addEventListener("visibilitychange", handleVisibilityChange);
       }
 
+      async function getUserName() {
+        // First try to get username from Telegram
+        if (tg.initDataUnsafe?.user?.username) {
+          return tg.initDataUnsafe.user.username;
+        }
+
+        // If no Telegram username, create a name input prompt
+        return new Promise((resolve) => {
+          const nameInput = document.createElement("input");
+          nameInput.type = "text";
+          nameInput.placeholder = "Enter your name";
+          nameInput.className = "name-input";
+          nameInput.minLength = 2;
+          nameInput.maxLength = 20;
+
+          const submitBtn = document.createElement("button");
+          submitBtn.textContent = "Submit";
+          submitBtn.className = "main-button";
+
+          const container = document.createElement("div");
+          container.className = "name-input-container";
+          container.appendChild(nameInput);
+          container.appendChild(submitBtn);
+
+          document.querySelector(".game-info").appendChild(container);
+
+          const handleSubmit = () => {
+            const name = nameInput.value.trim();
+            if (name.length >= 2) {
+              container.remove();
+              resolve(name);
+            }
+          };
+
+          submitBtn.addEventListener("click", handleSubmit);
+          nameInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") handleSubmit();
+          });
+        });
+      }
+
       // Usage in cleanup
       async function cleanup() {
         await stopPolling();
@@ -889,31 +930,76 @@
         }
       }
 
-      // Replace current handleJoin with this version
       async function handleJoin() {
+        const statusElement = document.getElementById("status");
+
+        // Check if already in game
         if (gameState.state.mySymbol) {
-          document.getElementById(
-            "status"
-          ).textContent = `You are already in the game as ${gameState.state.mySymbol}`;
+          statusElement.textContent = `You are already in the game as ${gameState.state.mySymbol}`;
           return;
         }
 
-        try {
-          const username =
-            tg.initDataUnsafe.user?.username || (await getUserName());
-          const response = await makeApiCall("join_game", { username });
+        // Disable join button during processing
+        const joinButton = document.getElementById("joinBtn");
+        joinButton.disabled = true;
 
-          if (response.success) {
+        try {
+          // Get username with fallback
+          let username;
+          if (tg.initDataUnsafe?.user?.username) {
+            username = tg.initDataUnsafe.user.username;
+          } else {
+            try {
+              username = await getUserName();
+              if (!username) {
+                joinButton.disabled = false;
+                return;
+              }
+            } catch (error) {
+              console.error("Name input error:", error);
+              statusElement.textContent = "Failed to get username";
+              joinButton.disabled = false;
+              return;
+            }
+          }
+
+          // Make API call
+          statusElement.textContent = "Joining game...";
+          const response = await makeApiCall("join_game", {
+            username,
+            timestamp: Date.now(),
+          });
+
+          // Handle successful join
+          if (response.success && response.gameState) {
             gameState.state.mySymbol = response.gameState.mySymbol;
             gameState.update(response.gameState);
-            startPolling();
+
+            // Start polling only if successfully joined
+            await startPolling();
+
+            statusElement.textContent = `You joined as ${response.gameState.mySymbol}`;
+
+            // Hide join button after successful join
+            joinButton.style.display = "none";
+          } else {
+            // Handle unsuccessful join
+            statusElement.textContent =
+              response.message || "Failed to join game";
+            joinButton.disabled = false;
           }
-          document.getElementById("status").textContent = response.success
-            ? `You joined as ${response.gameState.mySymbol}`
-            : response.message;
         } catch (error) {
+          // Handle errors
           console.error("Join error:", error);
-          document.getElementById("status").textContent = "Error joining game";
+          statusElement.textContent = "Connection error. Please try again.";
+          joinButton.disabled = false;
+
+          // Attempt to recover game state
+          try {
+            await recoverGameState();
+          } catch (recoveryError) {
+            console.error("Recovery failed:", recoveryError);
+          }
         }
       }
 
