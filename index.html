@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>JIMP Tic Tac Toe</title>
-    <script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
       :root {
         --tg-theme-bg-color: #fff8e1;
@@ -329,197 +329,602 @@
     </style>
   </head>
   <body>
-    <!-- Game Info Header -->
     <div class="game-info">
-      <button id="joinButton">Join</button>
-      <div id="status"></div>
-      <div id="turn-indicator"></div>
+      <div class="status" id="status">Welcome to Super Tic Tac Toe!</div>
+      <div class="phase-indicator" id="phaseIndicator"></div>
+      <div class="pieces-count" id="piecesCount"></div>
     </div>
 
-    <!-- The Board or Grid -->
-    <div class="board">
-      <!-- Example 4x4 board cells -->
-      <div class="row">
-        <div class="cell" data-row="0" data-col="0"></div>
-        <div class="cell" data-row="0" data-col="1"></div>
-        <div class="cell" data-row="0" data-col="2"></div>
-        <div class="cell" data-row="0" data-col="3"></div>
-      </div>
-      <div class="row">
-        <div class="cell" data-row="1" data-col="0"></div>
-        <div class="cell" data-row="1" data-col="1"></div>
-        <div class="cell" data-row="1" data-col="2"></div>
-        <div class="cell" data-row="1" data-col="3"></div>
-      </div>
-      <div class="row">
-        <div class="cell" data-row="2" data-col="0"></div>
-        <div class="cell" data-row="2" data-col="1"></div>
-        <div class="cell" data-row="2" data-col="2"></div>
-        <div class="cell" data-row="2" data-col="3"></div>
-      </div>
-      <div class="row">
-        <div class="cell" data-row="3" data-col="0"></div>
-        <div class="cell" data-row="3" data-col="1"></div>
-        <div class="cell" data-row="3" data-col="2"></div>
-        <div class="cell" data-row="3" data-col="3"></div>
-      </div>
+    <div id="game-board" class="game-board"></div>
+
+    <div class="button-container">
+      <button class="main-button" id="joinBtn">Join Game</button>
+      <button class="main-button" id="resetBtn">New Game</button>
     </div>
 
     <script>
-      // Hidden name input HTML to be inserted after the .game-info div
-      const nameInputHTML = `
-        <div class="game-info">
-          <input type="text" id="nameInput" 
-            placeholder="Enter your name" 
-            style="display: none; 
-                   padding: 8px;
-                   border-radius: 8px;
-                   border: 2px solid var(--cell-border-color);
-                   margin: 10px 0;"
-          >
-        </div>
-      `;
-
-      // Global variables
+      let tg = window.Telegram.WebApp;
+      const API_URL = "https://pjimpsons.pythonanywhere.com";
+      let lastStateUpdate = Date.now();
+      const POLLING_INTERVAL = 1000; // 1 second
+      const RETRY_INTERVAL = 2000; // 2 seconds
+      let retryCount = 0;
+      const MAX_RETRIES = 3;
+      let isPolling = false;
       let lastUpdate = 0;
-      const DEBOUNCE_TIME = 100;
       let isProcessingUpdate = false;
-      let isProcessingMove = false;
-      const POLLING_INTERVAL = 3000; // example polling interval
-      const API_URL = "https://your-api-endpoint.example.com";
+      const DEBOUNCE_TIME = 100;
 
-      // Telegram reference
-      let tg = window.Telegram?.WebApp || { initDataUnsafe: {} };
+      const nameInputHTML = `
+                    <div class="game-info">
+                      <input type="text" id="nameInput"
+                            placeholder="Enter your name"
+                            style="display: none;
+                                    padding: 8px;
+                                    border-radius: 8px;
+                                    border: 2px solid var(--cell-border-color);
+                                    margin: 10px 0;"
+                      >
+                    </div>`;
 
-      // GameState class to store and update game state
+      // Cache for storing game state
+      const stateCache = {
+        lastFullState: null,
+        lastUpdateTime: 0,
+        CACHE_DURATION: 5000, // 5 seconds
+      };
+
+      // Debounce function for handling rapid state updates
+      function debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+          const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+          };
+          clearTimeout(timeout);
+          timeout = setTimeout(later, wait);
+        };
+      }
+
+      // Throttle function for API calls
+      function throttle(func, limit) {
+        let inThrottle;
+        return function (...args) {
+          if (!inThrottle) {
+            func.apply(this, args);
+            inThrottle = true;
+            setTimeout(() => (inThrottle = false), limit);
+          }
+        };
+      }
+
+      async function checkGameState() {
+        try {
+          const response = await makeApiCall("get_game_state", {});
+          if (response.success) {
+            handleStateUpdate(response.gameState);
+          }
+        } catch (error) {
+          console.error("State check error:", error);
+          document.getElementById("status").textContent =
+            "Connection error, retrying...";
+        }
+      }
+
+      // Initialize polling mechanism
+      function initializePolling() {
+        if (isPolling) return;
+        isPolling = true;
+
+        const pollGameState = async () => {
+          if (!isPolling) return;
+
+          try {
+            const currentTime = Date.now();
+            if (currentTime - lastStateUpdate >= POLLING_INTERVAL) {
+              await throttledGameStateCheck();
+              lastStateUpdate = currentTime;
+            }
+          } catch (error) {
+            console.error("Polling error:", error);
+            if (++retryCount >= MAX_RETRIES) {
+              isPolling = false;
+              console.error("Max retries reached, stopping polling");
+              return;
+            }
+          }
+
+          setTimeout(pollGameState, POLLING_INTERVAL);
+        };
+
+        pollGameState();
+      }
+
+      function updateGameState(newState) {
+        if (!newState || typeof newState !== "object") return;
+        gameState.update(newState);
+      }
+
+      function updateGameStatus() {
+        const statusElement = document.getElementById("status");
+        if (!statusElement) return;
+
+        const { winner, currentTurn, isGameOver } = gameState.state;
+
+        if (isGameOver) {
+          statusElement.textContent = winner
+            ? `Game Over! ${winner} wins!`
+            : "Game Over! It's a draw!";
+          statusElement.classList.add("game-over");
+        } else {
+          statusElement.textContent = `${currentTurn}'s turn`;
+          statusElement.classList.remove("game-over");
+        }
+      }
+
+      // Handle state updates
+      function handleStateUpdate(newState) {
+        // Guard clauses
+        if (!newState) {
+          console.error("Invalid state received");
+          return;
+        }
+
+        if (Date.now() - lastUpdate < DEBOUNCE_TIME) {
+          return;
+        }
+
+        if (isProcessingUpdate) {
+          return;
+        }
+
+        try {
+          isProcessingUpdate = true;
+
+          // Deep comparison of states
+          const hasChanges = Object.keys(newState).some(
+            (key) =>
+              JSON.stringify(gameState.state[key]) !==
+              JSON.stringify(newState[key])
+          );
+
+          if (hasChanges) {
+            // Update game state
+            gameState.state = {
+              ...gameState.state,
+              ...newState,
+            };
+
+            // Update UI in next animation frame
+            requestAnimationFrame(() => {
+              updateBoard();
+              updateGameStatus();
+            });
+
+            lastUpdate = Date.now();
+          }
+        } catch (error) {
+          console.error("State update error:", error);
+        } finally {
+          isProcessingUpdate = false;
+        }
+      }
+
       class GameState {
         constructor() {
           this.state = {
-            board: [],
-            currentTurn: null,
+            board: Array(4)
+              .fill()
+              .map(() => Array(4).fill("")),
+            currentPlayer: "",
             mySymbol: null,
+            phase: "placement",
+            pieces: { O: 0, X: 0 },
             selectedPiece: null,
             lastMove: null,
+            gameEnded: false,
             winner: null,
-            isGameOver: false,
+            players: {},
+            joinTimeout: 60000,
+            placementTimeout: 60000,
+            lastActivityTime: Date.now(),
           };
+          this.lastUpdate = Date.now();
+          this.isProcessingMove = false;
+          this.moveQueue = [];
+          this.processingQueue = false;
+        }
+
+        shouldUpdate(newState) {
+          if (!newState || Date.now() - this.lastUpdate < 100) return false;
+
+          const relevantKeys = [
+            "board",
+            "currentPlayer",
+            "phase",
+            "pieces",
+            "gameEnded",
+            "winner",
+          ];
+          return relevantKeys.some(
+            (key) =>
+              JSON.stringify(this.state[key]) !== JSON.stringify(newState[key])
+          );
         }
 
         update(newState) {
-          if (!newState) return;
-          // Debounce or skip if too soon
-          if (Date.now() - lastUpdate < DEBOUNCE_TIME) return;
-          if (isProcessingUpdate) return;
+          // Early validation
+          if (!newState || typeof newState !== "object") return;
+          if (!this.shouldUpdate(newState)) return;
 
-          isProcessingUpdate = true;
           try {
-            // Check if there's any difference
-            const hasChanges = Object.keys(newState).some(
-              (key) =>
-                JSON.stringify(this.state[key]) !==
-                JSON.stringify(newState[key])
-            );
-            if (hasChanges) {
-              this.state = { ...this.state, ...newState };
-              requestAnimationFrame(() => {
-                updateBoard();
-                updateGameStatus();
+            // Create deep copy of current state for comparison
+            const prevState = JSON.parse(JSON.stringify(this.state));
+            const currentSymbol = this.state.mySymbol;
+            const currentSelectedPiece = this.state.selectedPiece;
+
+            // Track meaningful changes
+            const delta = {};
+            const significantKeys = [
+              "board",
+              "currentPlayer",
+              "phase",
+              "pieces",
+              "gameEnded",
+              "winner",
+              "lastMove",
+            ];
+
+            significantKeys.forEach((key) => {
+              if (
+                JSON.stringify(prevState[key]) !== JSON.stringify(newState[key])
+              ) {
+                delta[key] = newState[key];
+              }
+            });
+
+            // Only update if there are meaningful changes
+            if (Object.keys(delta).length > 0) {
+              // Update state while preserving local properties
+              this.state = {
+                ...this.state,
+                ...newState,
+                mySymbol: currentSymbol,
+                selectedPiece: currentSelectedPiece,
+              };
+
+              // Log state changes for debugging
+              console.log("State updated:", {
+                changes: delta,
+                currentPlayer: this.state.currentPlayer,
+                mySymbol: this.state.mySymbol,
+                phase: this.state.phase,
               });
-              lastUpdate = Date.now();
+
+              this.lastUpdate = Date.now();
+              this.updateUI();
             }
-          } finally {
-            isProcessingUpdate = false;
+          } catch (error) {
+            console.error("State update error:", error);
           }
         }
 
-        // Click handler for cells
-        async handleCellClick(event) {
-          if (!event.target.classList.contains("cell")) return;
-          const row = parseInt(event.target.dataset.row);
-          const col = parseInt(event.target.dataset.col);
-
-          // Example validity checks
-          if (!this.isValidTurn()) return;
-          if (!this.isValidMove(row, col)) return;
-
-          try {
-            isProcessingMove = true;
-            await this.processMove({ row, col, type: "placement" });
-          } finally {
-            isProcessingMove = false;
-          }
+        updateUI() {
+          requestAnimationFrame(() => {
+            updateBoard();
+            updateStatus();
+            updatePlayerDisplay();
+            updatePhaseIndicator();
+          });
         }
 
-        // Example placeholders
         isValidTurn() {
           return (
-            this.state.currentTurn === this.state.mySymbol &&
-            !this.state.isGameOver
+            this.state.mySymbol &&
+            this.state.currentPlayer === this.state.mySymbol &&
+            !this.state.gameEnded &&
+            !this.isProcessingMove &&
+            (this.state.phase === "placement"
+              ? this.state.pieces[this.state.mySymbol] < 4
+              : true)
           );
         }
 
         isValidMove(row, col) {
-          if (!this.state.board[row]) return false;
-          // Add custom logic for checking valid moves
-          return true;
+          // First check if it's player's turn
+          if (!this.isValidTurn()) {
+            console.log("Turn validation failed:", {
+              mySymbol: this.state.mySymbol,
+              currentPlayer: this.state.currentPlayer,
+              phase: this.state.phase,
+            });
+            return false;
+          }
+
+          if (this.state.phase === "movement") {
+            // If no piece is selected and clicking own piece, allow selection of any of your pieces
+            if (!this.state.selectedPiece) {
+              const isOwnPiece =
+                this.state.board[row][col] === this.state.mySymbol;
+              console.log("Piece selection validation:", {
+                position: { row, col },
+                piece: this.state.board[row][col],
+                isOwnPiece,
+              });
+              return isOwnPiece;
+            }
+
+            // If a piece is selected, allow movement to ANY empty tile
+            console.log("Movement validation:", {
+              from: this.state.selectedPiece,
+              to: { row, col },
+              targetCell: this.state.board[row][col],
+              isEmpty: this.state.board[row][col] === "",
+            });
+
+            // Only check if target tile is empty
+            return this.state.board[row][col] === "";
+          }
+
+          // Placement phase validation
+          const isValidPlacement =
+            this.state.board[row][col] === "" &&
+            this.state.pieces[this.state.mySymbol] < 4;
+
+          console.log("Placement validation:", {
+            position: { row, col },
+            isEmpty: this.state.board[row][col] === "",
+            piecesPlaced: this.state.pieces[this.state.mySymbol],
+            isValid: isValidPlacement,
+          });
+
+          return isValidPlacement;
         }
 
-        async processMove(moveData) {
-          const response = await makeApiCall("make_move", moveData);
-          if (response.success && response.gameState) {
-            this.update(response.gameState);
+        async processMoveQueue() {
+          if (this.processingQueue || this.moveQueue.length === 0) return;
+
+          this.processingQueue = true;
+          while (this.moveQueue.length > 0) {
+            const move = this.moveQueue.shift();
+            try {
+              await this.processMove(move);
+            } catch (error) {
+              console.error("Move processing error:", error);
+              if (this.isValidMove(move.row, move.col)) {
+                this.moveQueue.unshift(move);
+              }
+            }
+          }
+          this.processingQueue = false;
+        }
+
+        queueMove(move) {
+          this.moveQueue.push(move);
+          this.processMoveQueue();
+        }
+
+        async processMove(move) {
+          const { row, col, type } = move;
+          let result;
+
+          try {
+            console.log("Processing move:", { row, col, type });
+
+            if (type === "placement") {
+              // Direct call to makeMove instead of handlePlacement
+              result = await makeMove(row, col);
+            } else {
+              if (!this.state.selectedPiece) {
+                this.state.selectedPiece = { row, col };
+                this.updateUI();
+                return true;
+              }
+              result = await makeMove(row, col, this.state.selectedPiece);
+              this.state.selectedPiece = null;
+            }
+
+            console.log("Move result:", result);
+
+            if (result) {
+              this.state.lastMove = [row, col];
+              this.updateUI();
+            }
+
+            return result;
+          } catch (error) {
+            console.error("Move processing error:", error);
+            return false;
+          }
+        }
+
+        async handleCellClick(event) {
+          const row = parseInt(event.target.dataset.row);
+          const col = parseInt(event.target.dataset.col);
+
+          if (this.state.phase === "movement") {
+            if (
+              this.state.selectedPiece &&
+              row === this.state.selectedPiece.row &&
+              col === this.state.selectedPiece.col
+            ) {
+              this.state.selectedPiece = null;
+              this.updateUI();
+              return;
+            }
+            if (!this.isValidTurn()) return;
+            await this.handleMovement(row, col);
+            return;
+          }
+
+          if (!this.isValidTurn() || !this.isValidMove(row, col)) return;
+
+          try {
+            this.isProcessingMove = true;
+            await this.processMove({ row, col, type: "placement" });
+          } finally {
+            this.isProcessingMove = false;
+          }
+        }
+
+        async handlePlacement(row, col) {
+          if (!this.isValidMove(row, col)) return false;
+          return await makeMove(row, col);
+        }
+
+        async handleMovement(row, col) {
+          console.log("Movement phase:", {
+            selectedPiece: this.state.selectedPiece,
+            currentBoard: this.state.board[row][col],
+            mySymbol: this.state.mySymbol,
+          });
+
+          // If clicking already selected piece, deselect it
+          if (
+            this.state.selectedPiece &&
+            row === this.state.selectedPiece.row &&
+            col === this.state.selectedPiece.col
+          ) {
+            this.state.selectedPiece = null;
+            this.updateUI();
+            return true;
+          }
+
+          // If no piece selected and clicking own piece
+          if (
+            !this.state.selectedPiece &&
+            this.state.board[row][col] === this.state.mySymbol
+          ) {
+            this.state.selectedPiece = { row, col };
+            this.updateUI();
+            return true;
+          }
+
+          // If piece selected and target is valid
+          if (this.state.selectedPiece && this.isValidMove(row, col)) {
+            const result = await makeMove(row, col, this.state.selectedPiece);
+            this.state.selectedPiece = null;
+            return result;
+          }
+
+          return false;
+        }
+
+        async makeMove(row, col, selectedPiece = null) {
+          try {
+            const response = await makeApiCall("make_move", {
+              row,
+              col,
+              symbol: this.state.mySymbol,
+              selectedPiece,
+              chatId: tg.initDataUnsafe.chat?.id || "default",
+              userId: tg.initDataUnsafe.user?.id,
+            });
+
+            if (response.success) {
+              this.update(response.gameState);
+              return true;
+            }
+
+            document.getElementById("status").textContent = response.message;
+            return false;
+          } catch (error) {
+            console.error("Move error:", error);
+            document.getElementById("status").textContent = "Error making move";
+            return false;
           }
         }
       }
 
-      // Instantiate GameState
       const gameState = new GameState();
 
-      // Insert the name input markup once DOM is available, then set up game
+      // Second: Add the DOMContentLoaded listener
+      // unified
       document.addEventListener("DOMContentLoaded", () => {
         document
           .querySelector(".game-info")
           .insertAdjacentHTML("afterend", nameInputHTML);
-
         initializeGame();
         initializePolling();
       });
 
-      // Initialize the game and attach event listeners
-      function initializeGame() {
-        // Attach cell click listeners
-        const cells = document.querySelectorAll(".cell");
-        cells.forEach((cell) => {
-          cell.addEventListener("click", (e) => {
-            gameState.handleCellClick(e);
-          });
-        });
+      // API handling with retry logic and caching
+      async function makeApiCall(endpoint, data, retries = 3) {
+        for (let i = 0; i < retries; i++) {
+          try {
+            const response = await fetch(`${API_URL}/${endpoint}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                ...data,
+                chatId: tg.initDataUnsafe.chat?.id || "default",
+                userId: tg.initDataUnsafe.user?.id,
+                timestamp: Date.now(),
+              }),
+            });
 
-        // Attach join click listener
-        const joinButton = document.getElementById("joinButton");
-        if (joinButton) {
-          joinButton.addEventListener("click", handleJoin);
+            const result = await response.json();
+            if (result.message?.includes("already in the game")) {
+              return {
+                success: false,
+                isAlreadyJoined: true,
+                message: result.message,
+              };
+            }
+            return result;
+          } catch (error) {
+            if (i === retries - 1) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+          }
         }
       }
 
-      // Polling for game status
-      function initializePolling() {
-        setInterval(checkGameStatus, POLLING_INTERVAL);
-      }
-
-      // Check server for updated game status
-      async function checkGameStatus() {
+      // Efficient polling with throttling
+      const throttledGameStateCheck = throttle(async () => {
         try {
           const response = await makeApiCall("get_game_state", {});
-          if (response.success && response.gameState) {
-            gameState.update(response.gameState);
+          if (response.success) {
+            handleStateUpdate(response.gameState);
           }
         } catch (error) {
-          console.error("Error fetching game state:", error);
+          console.error("State check error:", error);
+          document.getElementById("status").textContent =
+            "Connection error, retrying...";
+        }
+      }, POLLING_INTERVAL);
+
+      async function checkGameStatus() {
+        if (Date.now() - lastStateUpdate >= POLLING_INTERVAL) {
+          await throttledGameStateCheck();
         }
       }
 
-      // Join the game with Telegram username or user input
+      // Game actions with proper error handling
+      async function makeMove(row, col, selectedPiece = null) {
+        try {
+          const response = await makeApiCall("make_move", {
+            row,
+            col,
+            symbol: gameState.state.mySymbol,
+            selectedPiece,
+          });
+
+          if (response.success) {
+            handleStateUpdate(response.gameState);
+            return true;
+          }
+
+          document.getElementById("status").textContent = response.message;
+          return false;
+        } catch (error) {
+          console.error("Move error:", error);
+          document.getElementById("status").textContent =
+            "Error making move, please try again";
+          return false;
+        }
+      }
+
       async function handleJoin() {
         if (gameState.state.mySymbol) {
           document.getElementById(
@@ -529,11 +934,14 @@
         }
 
         let username;
+
         if (tg.initDataUnsafe.user?.username) {
           username = tg.initDataUnsafe.user.username;
         } else {
           const nameInput = document.getElementById("nameInput");
           nameInput.style.display = "block";
+
+          // Wait for name input
           username = await new Promise((resolve) => {
             nameInput.addEventListener("keypress", (e) => {
               if (e.key === "Enter" && nameInput.value.trim()) {
@@ -546,10 +954,12 @@
 
         try {
           const response = await makeApiCall("join_game", { username });
+
           if (response.isAlreadyJoined) {
             document.getElementById("status").textContent = response.message;
             return;
           }
+
           if (response.success) {
             gameState.state.mySymbol = response.gameState.mySymbol;
             gameState.update(response.gameState);
@@ -565,39 +975,69 @@
         }
       }
 
-      // Make a generic API call with optional retries
-      async function makeApiCall(endpoint, data, retries = 3) {
-        for (let i = 0; i < retries; i++) {
-          try {
-            const response = await fetch(`${API_URL}/${endpoint}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ...data,
-                chatId: tg.initDataUnsafe.chat?.id || "default",
-                userId: tg.initDataUnsafe.user?.id || "anon",
-                timestamp: Date.now(),
-              }),
-            });
-            const result = await response.json();
-            if (result.message?.includes("already in the game")) {
-              return {
-                success: false,
-                isAlreadyJoined: true,
-                message: result.message,
-              };
-            }
-            return result;
-          } catch (error) {
-            console.error(`Error calling ${endpoint}:`, error);
-            if (i === retries - 1) throw error;
-            // Exponential backoff example
-            await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+      async function resetGame() {
+        try {
+          const response = await makeApiCall("reset_game", {});
+          if (response.success) {
+            // Reset local game state
+            gameState.state = {
+              board: Array(4)
+                .fill()
+                .map(() => Array(4).fill("")),
+              currentPlayer: "",
+              mySymbol: null,
+              phase: "placement",
+              pieces: { O: 0, X: 0 },
+              selectedPiece: null,
+              lastMove: null,
+              gameEnded: false,
+              winner: null,
+              players: {},
+              joinTimeout: 60000,
+              placementTimeout: 60000,
+              lastActivityTime: Date.now(),
+            };
+            gameState.update(response.gameState);
+            document.getElementById("status").textContent =
+              "Game has been reset. Click Join Game to play.";
           }
+        } catch (error) {
+          console.error("Reset error:", error);
+          document.getElementById("status").textContent =
+            "Error resetting game";
         }
       }
 
-      // Update board based on current game state
+      // Timeout checking
+      function checkTimeouts() {
+        const currentTime = Date.now();
+
+        if (Object.keys(gameState.state.players).length < 2) {
+          if (
+            currentTime - gameState.state.lastActivityTime >
+            gameState.state.joinTimeout
+          ) {
+            resetGame();
+            document.getElementById("status").textContent =
+              "Game reset due to inactivity. Click Join Game to play.";
+            return;
+          }
+        }
+
+        if (
+          gameState.state.phase === "placement" &&
+          (gameState.state.pieces.X > 0 || gameState.state.pieces.O > 0) &&
+          currentTime - gameState.state.lastActivityTime >
+            gameState.state.placementTimeout
+        ) {
+          resetGame();
+          document.getElementById("status").textContent =
+            "Game reset due to slow piece placement.";
+          return;
+        }
+      }
+
+      // UI Update Functions with requestAnimationFrame for performance
       function updateBoard() {
         if (!gameState.state.board) return;
 
@@ -605,12 +1045,14 @@
           try {
             const cells = document.querySelectorAll(".cell");
             const board = gameState.state.board;
+
             cells.forEach((cell, index) => {
               const row = Math.floor(index / 4);
               const col = index % 4;
+
               cell.className = "cell";
-              const piece = board[row][col] || "";
-              cell.textContent = piece;
+              const piece = board[row][col];
+              cell.textContent = piece || "";
 
               if (piece) {
                 cell.classList.add(`piece-${piece.toLowerCase()}`);
@@ -621,6 +1063,7 @@
                   cell.classList.add("selected");
                 }
               }
+
               if (
                 gameState.state.lastMove?.row === row &&
                 gameState.state.lastMove?.col === col
@@ -634,26 +1077,163 @@
         });
       }
 
-      // Update status: turn indicator, game over screen, etc.
-      function updateGameStatus() {
-        const statusElement = document.getElementById("status");
-        if (!statusElement) return;
-        const turnIndicator = document.getElementById("turn-indicator");
-        if (!turnIndicator) return;
+      function getWinningPattern(board, winner) {
+        if (!winner) return null;
 
-        const { winner, currentTurn, isGameOver } = gameState.state;
-        if (isGameOver) {
-          statusElement.textContent = winner
-            ? `Game Over! ${winner} wins!`
-            : "Game Over! It's a draw!";
-        } else {
-          statusElement.textContent = "";
+        // Check rows
+        for (let i = 0; i < 4; i++) {
+          if (board[i].every((cell) => cell === winner)) {
+            return [
+              [i, 0],
+              [i, 1],
+              [i, 2],
+              [i, 3],
+            ];
+          }
         }
 
-        turnIndicator.textContent = isGameOver
-          ? ""
-          : `Current Turn: ${currentTurn}`;
+        // Check columns
+        for (let j = 0; j < 4; j++) {
+          if (board.every((row) => row[j] === winner)) {
+            return [
+              [0, j],
+              [1, j],
+              [2, j],
+              [3, j],
+            ];
+          }
+        }
+
+        // Check diagonals
+        if (
+          board[0][0] === winner &&
+          board[1][1] === winner &&
+          board[2][2] === winner &&
+          board[3][3] === winner
+        ) {
+          return [
+            [0, 0],
+            [1, 1],
+            [2, 2],
+            [3, 3],
+          ];
+        }
+
+        if (
+          board[0][3] === winner &&
+          board[1][2] === winner &&
+          board[2][1] === winner &&
+          board[3][0] === winner
+        ) {
+          return [
+            [0, 3],
+            [1, 2],
+            [2, 1],
+            [3, 0],
+          ];
+        }
+
+        // Check 2x2 squares
+        for (let i = 0; i < 3; i++) {
+          for (let j = 0; j < 3; j++) {
+            if (
+              board[i][j] === winner &&
+              board[i][j + 1] === winner &&
+              board[i + 1][j] === winner &&
+              board[i + 1][j + 1] === winner
+            ) {
+              return [
+                [i, j],
+                [i, j + 1],
+                [i + 1, j],
+                [i + 1, j + 1],
+              ];
+            }
+          }
+        }
+
+        return null;
       }
+
+      function updateStatus() {
+        const statusDiv = document.getElementById("status");
+        requestAnimationFrame(() => {
+          if (gameState.state.gameEnded && gameState.state.winner) {
+            const winnerName = gameState.state.players[gameState.state.winner];
+            statusDiv.textContent = `${winnerName} (${gameState.state.winner}) has won! 🎉`;
+            statusDiv.classList.add("winner");
+          } else if (Object.keys(gameState.state.players).length < 2) {
+            statusDiv.textContent = "Waiting for players...";
+            statusDiv.classList.remove("winner");
+          } else {
+            const isMyTurn =
+              gameState.state.currentPlayer === gameState.state.mySymbol;
+            const currentPlayerName =
+              gameState.state.players[gameState.state.currentPlayer];
+            statusDiv.textContent = isMyTurn
+              ? "Your turn!"
+              : `Waiting for ${currentPlayerName}'s (${gameState.state.currentPlayer}) move...`;
+            statusDiv.classList.remove("winner");
+          }
+        });
+      }
+
+      function updatePlayerDisplay() {
+        const phaseDiv = document.getElementById("phaseIndicator");
+        requestAnimationFrame(() => {
+          const playersInfo = Object.entries(gameState.state.players)
+            .map(([symbol, name]) => `${symbol}: ${name}`)
+            .join(" vs ");
+          phaseDiv.innerHTML = `${playersInfo}<br>${
+            gameState.state.phase === "placement"
+              ? "Place your pieces"
+              : "Move your pieces"
+          }`;
+        });
+      }
+
+      function updatePhaseIndicator() {
+        const piecesDiv = document.getElementById("piecesCount");
+        requestAnimationFrame(() => {
+          if (gameState.state.phase === "placement") {
+            piecesDiv.textContent = `Pieces placed - X: ${gameState.state.pieces.X}/4, O: ${gameState.state.pieces.O}/4`;
+          } else {
+            piecesDiv.textContent = "Move phase: Move your pieces to win!";
+          }
+        });
+      }
+
+      // Game initialization
+      function initializeGame() {
+        const board = document.getElementById("game-board");
+        board.innerHTML = "";
+
+        for (let i = 0; i < 4; i++) {
+          for (let j = 0; j < 4; j++) {
+            const cell = document.createElement("div");
+            cell.className = "cell";
+            cell.dataset.row = i;
+            cell.dataset.col = j;
+            cell.addEventListener("click", (e) => gameState.handleCellClick(e));
+            board.appendChild(cell);
+          }
+        }
+
+        updateBoard();
+        tg.ready();
+        tg.expand();
+        checkGameStatus();
+      }
+
+      // Event Listeners
+      document.getElementById("joinBtn").addEventListener("click", handleJoin);
+      document.getElementById("resetBtn").addEventListener("click", resetGame);
+
+      // Start game polling
+      setInterval(checkGameStatus, POLLING_INTERVAL);
+
+      // Initialize game
+      initializeGame();
     </script>
   </body>
 </html>
