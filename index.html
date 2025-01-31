@@ -111,8 +111,6 @@
         cursor: pointer;
         background: #ffffff;
         transition: all 0.3s ease;
-        cursor: pointer;
-        transform-origin: center;
         border-radius: 0.75rem;
         box-shadow: 0 4px 8px var(--shadow-color);
         -webkit-tap-highlight-color: transparent;
@@ -351,21 +349,6 @@
       let retryCount = 0;
       const MAX_RETRIES = 3;
       let isPolling = false;
-      let lastUpdate = 0;
-      let isProcessingUpdate = false;
-      const DEBOUNCE_TIME = 100;
-
-      const nameInputHTML = `
-                    <div class="game-info">
-                      <input type="text" id="nameInput"
-                            placeholder="Enter your name"
-                            style="display: none;
-                                    padding: 8px;
-                                    border-radius: 8px;
-                                    border: 2px solid var(--cell-border-color);
-                                    margin: 10px 0;"
-                      >
-                    </div>`;
 
       // Cache for storing game state
       const stateCache = {
@@ -446,70 +429,39 @@
         gameState.update(newState);
       }
 
-      function updateGameStatus() {
-        const statusElement = document.getElementById("status");
-        if (!statusElement) return;
-
-        const { winner, currentTurn, isGameOver } = gameState.state;
-
-        if (isGameOver) {
-          statusElement.textContent = winner
-            ? `Game Over! ${winner} wins!`
-            : "Game Over! It's a draw!";
-          statusElement.classList.add("game-over");
-        } else {
-          statusElement.textContent = `${currentTurn}'s turn`;
-          statusElement.classList.remove("game-over");
-        }
-      }
-
       // Handle state updates
       function handleStateUpdate(newState) {
-        // Guard clauses
-        if (!newState) {
-          console.error("Invalid state received");
-          return;
-        }
+        if (!newState) return;
 
-        if (Date.now() - lastUpdate < DEBOUNCE_TIME) {
-          return;
-        }
-
-        if (isProcessingUpdate) {
-          return;
-        }
-
-        try {
-          isProcessingUpdate = true;
-
-          // Deep comparison of states
+        const currentTime = Date.now();
+        if (
+          !stateCache.lastFullState ||
+          currentTime - stateCache.lastUpdateTime >= stateCache.CACHE_DURATION
+        ) {
+          stateCache.lastFullState = newState;
+          stateCache.lastUpdateTime = currentTime;
+          updateGameState(newState);
+        } else {
+          // Compare and update only changed properties
           const hasChanges = Object.keys(newState).some(
             (key) =>
-              JSON.stringify(gameState.state[key]) !==
+              JSON.stringify(stateCache.lastFullState[key]) !==
               JSON.stringify(newState[key])
           );
 
           if (hasChanges) {
-            // Update game state
-            gameState.state = {
-              ...gameState.state,
-              ...newState,
-            };
-
-            // Update UI in next animation frame
-            requestAnimationFrame(() => {
-              updateBoard();
-              updateGameStatus();
-            });
-
-            lastUpdate = Date.now();
+            stateCache.lastFullState = newState;
+            stateCache.lastUpdateTime = currentTime;
+            updateGameState(newState);
           }
-        } catch (error) {
-          console.error("State update error:", error);
-        } finally {
-          isProcessingUpdate = false;
         }
       }
+
+      // Initialize the game
+      document.addEventListener("DOMContentLoaded", () => {
+        initializeGame();
+        initializePolling();
+      });
 
       class GameState {
         constructor() {
@@ -743,26 +695,55 @@
           const row = parseInt(event.target.dataset.row);
           const col = parseInt(event.target.dataset.col);
 
+          console.log("Cell clicked:", {
+            row,
+            col,
+            phase: this.state.phase,
+            selectedPiece: this.state.selectedPiece,
+            currentPlayer: this.state.currentPlayer,
+            mySymbol: this.state.mySymbol,
+          });
+
+          // Handle movement phase
           if (this.state.phase === "movement") {
+            // Check for deselection first, before any other validation
             if (
               this.state.selectedPiece &&
               row === this.state.selectedPiece.row &&
               col === this.state.selectedPiece.col
             ) {
+              console.log("Deselecting piece");
               this.state.selectedPiece = null;
               this.updateUI();
               return;
             }
-            if (!this.isValidTurn()) return;
+
+            // Then proceed with regular move handling
+            if (!this.isValidTurn()) {
+              console.log("Not valid turn");
+              return;
+            }
+
             await this.handleMovement(row, col);
             return;
           }
 
-          if (!this.isValidTurn() || !this.isValidMove(row, col)) return;
+          // Handle placement phase
+          if (!this.isValidTurn()) {
+            console.log("Not valid turn");
+            return;
+          }
+
+          if (!this.isValidMove(row, col)) {
+            console.log("Invalid move:", { row, col });
+            return;
+          }
 
           try {
             this.isProcessingMove = true;
             await this.processMove({ row, col, type: "placement" });
+          } catch (error) {
+            console.error("Move processing error:", error);
           } finally {
             this.isProcessingMove = false;
           }
@@ -839,44 +820,38 @@
 
       const gameState = new GameState();
 
-      // Second: Add the DOMContentLoaded listener
-      // unified
-      document.addEventListener("DOMContentLoaded", () => {
-        document
-          .querySelector(".game-info")
-          .insertAdjacentHTML("afterend", nameInputHTML);
-        initializeGame();
-        initializePolling();
-      });
-
       // API handling with retry logic and caching
       async function makeApiCall(endpoint, data, retries = 3) {
-        for (let i = 0; i < retries; i++) {
-          try {
-            const response = await fetch(`${API_URL}/${endpoint}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                ...data,
-                chatId: tg.initDataUnsafe.chat?.id || "default",
-                userId: tg.initDataUnsafe.user?.id,
-                timestamp: Date.now(),
-              }),
-            });
+        try {
+          const response = await fetch(`${API_URL}/${endpoint}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...data,
+              chatId: tg.initDataUnsafe.chat?.id || "default",
+              userId: tg.initDataUnsafe.user?.id,
+              timestamp: Date.now(),
+            }),
+          });
 
-            const result = await response.json();
-            if (result.message?.includes("already in the game")) {
-              return {
-                success: false,
-                isAlreadyJoined: true,
-                message: result.message,
-              };
-            }
-            return result;
-          } catch (error) {
-            if (i === retries - 1) throw error;
-            await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+          const result = await response.json();
+
+          // Handle "already in game" as a special case
+          if (
+            result.message &&
+            result.message.includes("already in the game")
+          ) {
+            return {
+              success: false,
+              isAlreadyJoined: true,
+              message: result.message,
+            };
           }
+
+          return result;
+        } catch (error) {
+          console.error("API call error:", error);
+          throw error;
         }
       }
 
@@ -926,6 +901,7 @@
       }
 
       async function handleJoin() {
+        // First check local state
         if (gameState.state.mySymbol) {
           document.getElementById(
             "status"
@@ -933,27 +909,10 @@
           return;
         }
 
-        let username;
-
-        if (tg.initDataUnsafe.user?.username) {
-          username = tg.initDataUnsafe.user.username;
-        } else {
-          const nameInput = document.getElementById("nameInput");
-          nameInput.style.display = "block";
-
-          // Wait for name input
-          username = await new Promise((resolve) => {
-            nameInput.addEventListener("keypress", (e) => {
-              if (e.key === "Enter" && nameInput.value.trim()) {
-                nameInput.style.display = "none";
-                resolve(nameInput.value.trim());
-              }
-            });
-          });
-        }
-
         try {
-          const response = await makeApiCall("join_game", { username });
+          const response = await makeApiCall("join_game", {
+            username: tg.initDataUnsafe.user?.username || "Player",
+          });
 
           if (response.isAlreadyJoined) {
             document.getElementById("status").textContent = response.message;
@@ -1039,41 +998,45 @@
 
       // UI Update Functions with requestAnimationFrame for performance
       function updateBoard() {
-        if (!gameState.state.board) return;
+        const cells = document.querySelectorAll(".cell");
+        const winningPattern = getWinningPattern(
+          gameState.state.board,
+          gameState.state.winner
+        );
 
         requestAnimationFrame(() => {
-          try {
-            const cells = document.querySelectorAll(".cell");
-            const board = gameState.state.board;
+          cells.forEach((cell, index) => {
+            const row = Math.floor(index / 4);
+            const col = index % 4;
+            cell.textContent = gameState.state.board[row][col];
+            cell.className = "cell";
 
-            cells.forEach((cell, index) => {
-              const row = Math.floor(index / 4);
-              const col = index % 4;
-
-              cell.className = "cell";
-              const piece = board[row][col];
-              cell.textContent = piece || "";
-
-              if (piece) {
-                cell.classList.add(`piece-${piece.toLowerCase()}`);
-                if (
-                  gameState.state.selectedPiece?.row === row &&
-                  gameState.state.selectedPiece?.col === col
-                ) {
-                  cell.classList.add("selected");
-                }
+            if (
+              gameState.state.gameEnded &&
+              gameState.state.winner &&
+              winningPattern
+            ) {
+              if (winningPattern.some(([r, c]) => r === row && c === col)) {
+                cell.classList.add("winner");
               }
+            }
 
-              if (
-                gameState.state.lastMove?.row === row &&
-                gameState.state.lastMove?.col === col
-              ) {
-                cell.classList.add("last-move");
-              }
-            });
-          } catch (error) {
-            console.error("Board update error:", error);
-          }
+            if (
+              gameState.state.selectedPiece &&
+              row === gameState.state.selectedPiece.row &&
+              col === gameState.state.selectedPiece.col
+            ) {
+              cell.classList.add("selected");
+            }
+
+            if (
+              gameState.state.lastMove &&
+              row === gameState.state.lastMove[0] &&
+              col === gameState.state.lastMove[1]
+            ) {
+              cell.classList.add("last-move");
+            }
+          });
         });
       }
 
