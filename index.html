@@ -552,6 +552,19 @@
           );
         }
 
+        // Add proper validation
+        validatePlacement(position) {
+          const piecesPlaced = this.countPieces(this.state.mySymbol);
+          return {
+            position,
+            isEmpty: this.state.board[position.row][position.col] === "",
+            piecesPlaced,
+            isValid:
+              piecesPlaced < 4 &&
+              this.state.board[position.row][position.col] === "",
+          };
+        }
+
         update(newState) {
           if (!this.validateState(newState)) return;
 
@@ -565,10 +578,7 @@
             selectedPiece: this.state.selectedPiece,
           };
 
-          requestAnimationFrame(() => {
-            this.updateUI();
-            this.lastUpdate = Date.now();
-          });
+          requestAnimationFrame(() => this.updateUI());
         }
 
         validateState(newState) {
@@ -704,36 +714,27 @@
         }
 
         async processMove(move) {
-          const { row, col, type } = move;
-          let result;
+          if (this.isProcessingMove) return false;
 
           try {
-            console.log("Processing move:", { row, col, type });
+            this.isProcessingMove = true;
+            const response = await makeApiCall("make_move", {
+              row: move.row,
+              col: move.col,
+              type: move.type,
+              symbol: this.state.mySymbol,
+            });
 
-            if (type === "placement") {
-              // Direct call to makeMove instead of handlePlacement
-              result = await makeMove(row, col);
-            } else {
-              if (!this.state.selectedPiece) {
-                this.state.selectedPiece = { row, col };
-                this.updateUI();
-                return true;
-              }
-              result = await makeMove(row, col, this.state.selectedPiece);
-              this.state.selectedPiece = null;
+            if (response.success) {
+              this.update(response.gameState);
+              return true;
             }
-
-            console.log("Move result:", result);
-
-            if (result) {
-              this.state.lastMove = [row, col];
-              this.updateUI();
-            }
-
-            return result;
-          } catch (error) {
-            console.error("Move processing error:", error);
             return false;
+          } catch (error) {
+            console.error("Move error:", error);
+            return false;
+          } finally {
+            this.isProcessingMove = false;
           }
         }
 
