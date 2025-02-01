@@ -682,10 +682,10 @@
       }
 
       async function handleJoin() {
-        if (gameState.mySymbol) {
+        if (gameState.state.mySymbol) {
           document.getElementById(
             "status"
-          ).textContent = `You are already in the game as ${gameState.mySymbol}`;
+          ).textContent = `You are already in the game as ${gameState.state.mySymbol}`;
           return;
         }
 
@@ -695,11 +695,11 @@
           const response = await makeApiCall("join_game", { username });
 
           if (response.success) {
-            const gameState = response.gameState;
-            console.log("game state is" + gameState.mySymbol);
-            this.state.mySymbol = gameState.mySymbol;
-            this.state.currentPlayer = gameState.currentPlayer;
-            this.update(gameState);
+            console.log("game state is " + response.gameState.mySymbol);
+            // Use the gameState instance directly instead of 'this'
+            gameState.state.mySymbol = response.gameState.mySymbol;
+            gameState.state.currentPlayer = response.gameState.currentPlayer;
+            gameState.update(response.gameState);
             startPolling();
           }
 
