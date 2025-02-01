@@ -622,6 +622,47 @@
         }
       }
 
+      async function getUserName() {
+        // First check for Telegram username
+        if (tg.initDataUnsafe?.user?.username) {
+          return tg.initDataUnsafe.user.username;
+        }
+
+        // If no Telegram username, create name input prompt
+        return new Promise((resolve) => {
+          const nameInput = document.createElement("input");
+          nameInput.type = "text";
+          nameInput.placeholder = "Enter your name";
+          nameInput.className = "name-input";
+          nameInput.minLength = 2;
+          nameInput.maxLength = 20;
+
+          const submitBtn = document.createElement("button");
+          submitBtn.textContent = "Submit";
+          submitBtn.className = "main-button";
+
+          const container = document.createElement("div");
+          container.className = "name-input-container";
+          container.appendChild(nameInput);
+          container.appendChild(submitBtn);
+
+          document.querySelector(".game-info").appendChild(container);
+
+          const handleSubmit = () => {
+            const name = nameInput.value.trim();
+            if (name.length >= 2) {
+              container.remove();
+              resolve(name);
+            }
+          };
+
+          submitBtn.addEventListener("click", handleSubmit);
+          nameInput.addEventListener("keypress", (e) => {
+            if (e.key === "Enter") handleSubmit();
+          });
+        });
+      }
+
       async function handleJoin() {
         if (gameState.state.mySymbol) {
           document.getElementById(
