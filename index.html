@@ -682,10 +682,10 @@
       }
 
       async function handleJoin() {
-        if (gameState.state.mySymbol) {
+        if (gameState.mySymbol) {
           document.getElementById(
             "status"
-          ).textContent = `You are already in the game as ${gameState.state.mySymbol}`;
+          ).textContent = `You are already in the game as ${gameState.mySymbol}`;
           return;
         }
 
@@ -696,15 +696,15 @@
 
           if (response.success) {
             const gameState = response.gameState;
-            console.log("game state is" + gameState.state + gameState.mySymbol);
-            this.state.mySymbol = gameState.state.mySymbol;
+            console.log("game state is" + gameState.mySymbol);
+            this.state.mySymbol = gameState.mySymbol;
             this.state.currentPlayer = gameState.currentPlayer;
             this.update(gameState);
             startPolling();
           }
 
           document.getElementById("status").textContent = response.success
-            ? `You joined as ${response.gameState.state.mySymbol}`
+            ? `You joined as ${response.gameState.mySymbol}`
             : response.message;
         } catch (error) {
           console.error("Join error:", error);
