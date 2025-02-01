@@ -591,10 +591,10 @@
           console.log("Handle movement:", {
             selectedPiece: this.state.selectedPiece,
             targetCell: { row, col },
-            currentBoard: this.state.board[row][col],
+            boardState: this.state.board[row][col],
           });
 
-          // Clicking the same piece that's selected - deselect it
+          // Clicking the same piece - deselect
           if (
             this.state.selectedPiece &&
             row === this.state.selectedPiece.row &&
@@ -606,20 +606,20 @@
             return true;
           }
 
-          // No piece selected and clicking own piece - select it
-          if (
-            !this.state.selectedPiece &&
-            this.state.board[row][col] === this.state.mySymbol
-          ) {
-            console.log("Selecting new piece");
-            this.state.selectedPiece = { row, col };
-            this.updateUI();
-            return true;
+          // No piece selected - try to select
+          if (!this.state.selectedPiece) {
+            if (this.state.board[row][col] === this.state.mySymbol) {
+              console.log("Selecting piece");
+              this.state.selectedPiece = { row, col };
+              this.updateUI();
+              return true;
+            }
+            return false;
           }
 
-          // Have selected piece and clicking empty cell - try to move
-          if (this.state.selectedPiece && this.state.board[row][col] === "") {
-            console.log("Attempting move");
+          // Moving piece - validate target cell
+          if (this.state.board[row][col] === "") {
+            console.log("Moving piece");
             const result = await this.processMove({
               row,
               col,
