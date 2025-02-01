@@ -395,65 +395,30 @@
         }
       }
 
-      // Initialize polling mechanism
-      function initializePolling() {
-        if (isPolling) return;
-        isPolling = true;
+      // Replace current polling implementation with
+      let pollInterval;
 
-        const pollGameState = async () => {
-          if (!isPolling) return;
-
-          try {
-            const currentTime = Date.now();
-            if (currentTime - lastStateUpdate >= POLLING_INTERVAL) {
-              await throttledGameStateCheck();
-              lastStateUpdate = currentTime;
-            }
-          } catch (error) {
-            console.error("Polling error:", error);
-            if (++retryCount >= MAX_RETRIES) {
-              isPolling = false;
-              console.error("Max retries reached, stopping polling");
-              return;
+      function startPolling() {
+        if (pollInterval) stopPolling();
+        pollInterval = setInterval(async () => {
+          if (!document.hidden && navigator.onLine) {
+            try {
+              const response = await makeApiCall("get_game_state", {});
+              if (response.success) {
+                gameState.update(response.gameState);
+              }
+            } catch (error) {
+              console.error("Polling error:", error);
+              stopPolling();
             }
           }
-
-          setTimeout(pollGameState, POLLING_INTERVAL);
-        };
-
-        pollGameState();
+        }, POLLING_INTERVAL);
       }
 
-      function updateGameState(newState) {
-        if (!newState || typeof newState !== "object") return;
-        gameState.update(newState);
-      }
-
-      // Handle state updates
-      function handleStateUpdate(newState) {
-        if (!newState) return;
-
-        const currentTime = Date.now();
-        if (
-          !stateCache.lastFullState ||
-          currentTime - stateCache.lastUpdateTime >= stateCache.CACHE_DURATION
-        ) {
-          stateCache.lastFullState = newState;
-          stateCache.lastUpdateTime = currentTime;
-          updateGameState(newState);
-        } else {
-          // Compare and update only changed properties
-          const hasChanges = Object.keys(newState).some(
-            (key) =>
-              JSON.stringify(stateCache.lastFullState[key]) !==
-              JSON.stringify(newState[key])
-          );
-
-          if (hasChanges) {
-            stateCache.lastFullState = newState;
-            stateCache.lastUpdateTime = currentTime;
-            updateGameState(newState);
-          }
+      function stopPolling() {
+        if (pollInterval) {
+          clearInterval(pollInterval);
+          pollInterval = null;
         }
       }
 
@@ -481,6 +446,7 @@
           this.isProcessingMove = false;
           this.moveQueue = [];
           this.processingQueue = false;
+          this.lastUpdate = Date.now();
         }
 
         validateState(newState) {
@@ -492,51 +458,27 @@
           );
         }
 
-        detectStateChanges(newState) {
-          const changes = {};
-          const keys = [
-            "board",
-            "currentPlayer",
-            "phase",
-            "pieces",
-            "gameEnded",
-            "winner",
-          ];
-          keys.forEach((key) => {
-            if (
-              JSON.stringify(this.state[key]) !== JSON.stringify(newState[key])
-            ) {
-              changes[key] = newState[key];
-            }
-          });
-          return changes;
-        }
-
         update(newState) {
           if (!this.validateState(newState)) return;
 
-          const changes = this.detectStateChanges(newState);
-          if (Object.keys(changes).length === 0) return;
+          const currentSymbol = this.state.mySymbol;
+          const currentSelectedPiece = this.state.selectedPiece;
 
           this.state = {
             ...this.state,
-            ...changes,
-            mySymbol: this.state.mySymbol,
-            selectedPiece: this.state.selectedPiece,
+            ...newState,
+            mySymbol: currentSymbol,
+            selectedPiece: currentSelectedPiece,
           };
 
           requestAnimationFrame(() => this.updateUI());
         }
 
         updateUI() {
-          const updates = new Set(["board", "status", "players", "phase"]);
-          requestAnimationFrame(() => {
-            if (updates.has("board")) updateBoard();
-            if (updates.has("status")) updateStatus();
-            if (updates.has("players")) updatePlayerDisplay();
-            if (updates.has("phase")) updatePhaseIndicator();
-            updates.clear();
-          });
+          updateBoard();
+          updateStatus();
+          updatePlayerDisplay();
+          updatePhaseIndicator();
         }
 
         isValidTurn() {
@@ -575,6 +517,7 @@
 
           try {
             this.isProcessingMove = true;
+
             if (this.state.phase === "movement") {
               await this.handleMovement(row, col);
             } else if (this.isValidMove(row, col)) {
@@ -620,38 +563,28 @@
         }
 
         async processMove(move) {
-          if (this.isProcessingMove) return false;
+          const moveData = {
+            row: move.row,
+            col: move.col,
+            type: move.type,
+            symbol: this.state.mySymbol,
+            userId: tg.initDataUnsafe.user?.id,
+            selectedPiece: this.state.selectedPiece,
+            chatId: tg.initDataUnsafe.chat?.id || "default",
+            phase: this.state.phase,
+          };
 
-          try {
-            this.isProcessingMove = true;
-            const moveData = {
-              row: move.row,
-              col: move.col,
-              type: move.type,
-              symbol: this.state.mySymbol,
-              userId: tg.initDataUnsafe.user?.id,
-              selectedPiece: this.state.selectedPiece,
-              chatId: tg.initDataUnsafe.chat?.id || "default",
-              phase: this.state.phase,
-            };
+          const response = await makeApiCall("make_move", moveData);
 
-            const response = await makeApiCall("make_move", moveData);
-
-            if (response.success) {
-              this.update(response.gameState);
-              return true;
-            }
-
-            if (response.message) {
-              document.getElementById("status").textContent = response.message;
-            }
-            return false;
-          } catch (error) {
-            console.error("Move processing error:", error);
-            return false;
-          } finally {
-            this.isProcessingMove = false;
+          if (response.success) {
+            this.update(response.gameState);
+            return true;
           }
+
+          if (response.message) {
+            document.getElementById("status").textContent = response.message;
+          }
+          return false;
         }
       }
 
@@ -709,31 +642,6 @@
       async function checkGameStatus() {
         if (Date.now() - lastStateUpdate >= POLLING_INTERVAL) {
           await throttledGameStateCheck();
-        }
-      }
-
-      // Game actions with proper error handling
-      async function makeMove(row, col, selectedPiece = null) {
-        try {
-          const response = await makeApiCall("make_move", {
-            row,
-            col,
-            symbol: gameState.state.mySymbol,
-            selectedPiece,
-          });
-
-          if (response.success) {
-            handleStateUpdate(response.gameState);
-            return true;
-          }
-
-          document.getElementById("status").textContent = response.message;
-          return false;
-        } catch (error) {
-          console.error("Move error:", error);
-          document.getElementById("status").textContent =
-            "Error making move, please try again";
-          return false;
         }
       }
 
@@ -1003,11 +911,11 @@
         });
       }
 
-      // Game initialization
       function initializeGame() {
         const board = document.getElementById("game-board");
         board.innerHTML = "";
 
+        const fragment = document.createDocumentFragment();
         for (let i = 0; i < 4; i++) {
           for (let j = 0; j < 4; j++) {
             const cell = document.createElement("div");
@@ -1015,22 +923,19 @@
             cell.dataset.row = i;
             cell.dataset.col = j;
             cell.addEventListener("click", (e) => gameState.handleCellClick(e));
-            board.appendChild(cell);
+            fragment.appendChild(cell);
           }
         }
+        board.appendChild(fragment);
 
-        updateBoard();
         tg.ready();
         tg.expand();
-        checkGameStatus();
+        startPolling();
       }
 
       // Event Listeners
       document.getElementById("joinBtn").addEventListener("click", handleJoin);
       document.getElementById("resetBtn").addEventListener("click", resetGame);
-
-      // Start game polling
-      setInterval(checkGameStatus, POLLING_INTERVAL);
 
       // Initialize game
       initializeGame();
