@@ -577,6 +577,7 @@
         }
 
         async handleMovement(row, col) {
+          // Handle deselection - if clicking the same piece that's already selected
           if (
             this.state.selectedPiece &&
             row === this.state.selectedPiece.row &&
@@ -587,6 +588,7 @@
             return true;
           }
 
+          // Handle new piece selection
           if (
             !this.state.selectedPiece &&
             this.state.board[row][col] === this.state.mySymbol
@@ -596,6 +598,7 @@
             return true;
           }
 
+          // Handle movement of selected piece
           if (this.state.selectedPiece && this.isValidMove(row, col)) {
             const result = await this.processMove({
               row,
@@ -603,7 +606,10 @@
               type: "movement",
               selectedPiece: this.state.selectedPiece,
             });
+
+            // Clear selection after move attempt, regardless of success
             this.state.selectedPiece = null;
+            this.updateUI();
             return result;
           }
 
