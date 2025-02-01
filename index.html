@@ -567,11 +567,13 @@
         }
 
         countPieces(symbol) {
-          return this.state.board.reduce(
-            (count, row) =>
-              count + row.filter((cell) => cell === symbol).length,
-            0
-          );
+          let count = 0;
+          for (let i = 0; i < 4; i++) {
+            for (let j = 0; j < 4; j++) {
+              if (this.state.board[i][j] === symbol) count++;
+            }
+          }
+          return count;
         }
 
         update(newState) {
@@ -585,6 +587,10 @@
             ...changes,
             mySymbol: this.state.mySymbol,
             selectedPiece: this.state.selectedPiece,
+            pieces: {
+              X: this.countPieces("X"),
+              O: this.countPieces("O"),
+            },
           };
 
           requestAnimationFrame(() => this.updateUI());
@@ -725,12 +731,6 @@
         async processMove(move) {
           if (this.isProcessingMove) return false;
 
-          if (this.state.phase === "movement" && !this.state.selectedPiece) {
-            document.getElementById("status").textContent =
-              "Select a piece first";
-            return false;
-          }
-
           try {
             this.isProcessingMove = true;
             const moveData = {
@@ -741,18 +741,18 @@
               userId: tg.initDataUnsafe.user?.id,
               selectedPiece: this.state.selectedPiece,
               chatId: tg.initDataUnsafe.chat?.id || "default",
-            };
-            const response = await makeApiCall("make_move", {
-              row: move.row,
-              col: move.col,
-              type: move.type,
-              symbol: this.state.mySymbol,
               phase: this.state.phase,
-            });
+            };
+
+            const response = await makeApiCall("make_move", moveData);
 
             if (response.success) {
               this.update(response.gameState);
               return true;
+            }
+
+            if (response.message) {
+              document.getElementById("status").textContent = response.message;
             }
             return false;
           } catch (error) {
