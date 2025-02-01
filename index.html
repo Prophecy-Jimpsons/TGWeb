@@ -423,8 +423,6 @@
             players: {},
           };
           this.isProcessingMove = false;
-          this.moveQueue = [];
-          this.processingQueue = false;
           this.lastUpdate = Date.now();
         }
 
@@ -438,7 +436,10 @@
         }
 
         update(newState) {
-          if (!this.validateState(newState)) return;
+          if (!this.validateState(newState)) {
+            console.error("Invalid state update:", newState);
+            return;
+          }
 
           const currentSymbol = this.state.mySymbol;
           const currentSelectedPiece = this.state.selectedPiece;
@@ -446,30 +447,55 @@
           this.state = {
             ...this.state,
             ...newState,
-            mySymbol: currentSymbol,
+            mySymbol: currentSymbol || newState.mySymbol,
             selectedPiece: currentSelectedPiece,
           };
 
-          requestAnimationFrame(() => this.updateUI());
+          console.log("State updated:", {
+            mySymbol: this.state.mySymbol,
+            currentPlayer: this.state.currentPlayer,
+            phase: this.state.phase,
+            pieces: this.state.pieces,
+          });
+
+          this.updateUI();
         }
 
         updateUI() {
-          const updates = new Set();
+          const updates = new Set(["board", "status", "players", "phase"]);
           requestAnimationFrame(() => {
-            if (updates.has("board")) updateBoard();
-            if (updates.has("status")) updateStatus();
-            if (updates.has("players")) updatePlayerDisplay();
-            if (updates.has("phase")) updatePhaseIndicator();
+            updates.forEach((type) => {
+              switch (type) {
+                case "board":
+                  updateBoard();
+                  break;
+                case "status":
+                  updateStatus();
+                  break;
+                case "players":
+                  updatePlayerDisplay();
+                  break;
+                case "phase":
+                  updatePhaseIndicator();
+                  break;
+              }
+            });
             updates.clear();
           });
         }
 
         isValidTurn() {
-          // Remove processing check from here as it's handled in handleCellClick
+          const validation = {
+            hasSymbol: Boolean(this.state.mySymbol),
+            isCurrentPlayer: this.state.currentPlayer === this.state.mySymbol,
+            notEnded: !this.state.gameEnded,
+          };
+
+          console.log("Turn validation:", validation);
           return (
-            this.state.mySymbol &&
-            this.state.currentPlayer === this.state.mySymbol &&
-            !this.state.gameEnded
+            validation.hasSymbol &&
+            validation.isCurrentPlayer &&
+            validation.notEnded
           );
         }
 
@@ -477,20 +503,21 @@
           if (!this.isValidTurn()) return false;
 
           const validation = {
-            isValidTurn: this.isValidTurn(),
             isEmpty: this.state.board[row][col] === "",
             piecesCount: this.state.pieces[this.state.mySymbol],
             phase: this.state.phase,
           };
 
+          console.log("Move validation:", validation);
+
           if (this.state.phase === "placement") {
             return validation.isEmpty && validation.piecesCount < 4;
           }
 
-          // Movement phase logic
           if (!this.state.selectedPiece) {
             return this.state.board[row][col] === this.state.mySymbol;
           }
+
           return validation.isEmpty;
         }
 
@@ -498,17 +525,17 @@
           const row = parseInt(event.target.dataset.row);
           const col = parseInt(event.target.dataset.col);
 
-          // Move validation should happen BEFORE setting processing lock
-          if (!this.isValidMove(row, col)) {
-            console.log("Invalid move:", {
-              isValidTurn: this.isValidTurn(),
-              board: this.state.board[row][col],
-              pieces: this.state.pieces[this.state.mySymbol],
-            });
+          console.log("Cell clicked:", { row, col, phase: this.state.phase });
+
+          if (this.isProcessingMove) {
+            console.log("Move already processing");
             return;
           }
 
-          if (this.isProcessingMove) return;
+          if (!this.isValidMove(row, col)) {
+            console.log("Invalid move detected");
+            return;
+          }
 
           try {
             this.isProcessingMove = true;
@@ -517,12 +544,15 @@
             } else {
               await this.processMove({ row, col, type: "placement" });
             }
+          } catch (error) {
+            console.error("Move processing error:", error);
           } finally {
             this.isProcessingMove = false;
           }
         }
 
         async handleMovement(row, col) {
+          // Handle deselection
           if (
             this.state.selectedPiece &&
             row === this.state.selectedPiece.row &&
@@ -533,6 +563,7 @@
             return true;
           }
 
+          // Handle selection
           if (
             !this.state.selectedPiece &&
             this.state.board[row][col] === this.state.mySymbol
@@ -542,6 +573,7 @@
             return true;
           }
 
+          // Handle movement
           if (this.state.selectedPiece && this.isValidMove(row, col)) {
             const result = await this.processMove({
               row,
@@ -557,33 +589,42 @@
         }
 
         async processMove(move) {
+          if (!this.state.mySymbol) {
+            console.error("No symbol assigned");
+            return false;
+          }
+
           const moveData = {
             row: move.row,
             col: move.col,
             type: move.type,
             symbol: this.state.mySymbol,
-            userId: tg.initDataUnsafe.user?.id,
-            selectedPiece: this.state.selectedPiece,
-            chatId: tg.initDataUnsafe.chat?.id || "default",
+            userId: tg.initDataUnsafe?.user?.id,
+            selectedPiece:
+              move.type === "movement" ? this.state.selectedPiece : null,
+            chatId: tg.initDataUnsafe?.chat?.id || "default",
             phase: this.state.phase,
           };
 
           console.log("Processing move:", moveData);
 
-          const response = await makeApiCall("make_move", moveData);
-          console.log("Move API response:", response);
+          try {
+            const response = await makeApiCall("make_move", moveData);
+            console.log("Move API response:", response);
 
-          if (response.success) {
-            console.log("Move successful, updating state");
-            this.update(response.gameState);
-            return true;
-          }
+            if (response.success) {
+              this.update(response.gameState);
+              return true;
+            }
 
-          if (response.message) {
-            console.log("Move failed:", response.message);
-            document.getElementById("status").textContent = response.message;
+            if (response.message) {
+              document.getElementById("status").textContent = response.message;
+            }
+            return false;
+          } catch (error) {
+            console.error("Move processing failed:", error);
+            return false;
           }
-          return false;
         }
       }
 
@@ -680,21 +721,19 @@
             tg.initDataUnsafe.user?.username || (await getUserName());
           const response = await makeApiCall("join_game", { username });
 
-          if (response.success) {
-            console.log("game state is " + response.gameState.mySymbol);
-            // Use the gameState instance directly instead of 'this'
+          if (response.success && response.gameState) {
+            // Set mySymbol first
             gameState.state.mySymbol = response.gameState.mySymbol;
-            gameState.state.currentPlayer = response.gameState.currentPlayer;
+            // Then update full state
             gameState.update(response.gameState);
+            console.log("Joined game:", {
+              mySymbol: gameState.state.mySymbol,
+              currentPlayer: gameState.state.currentPlayer,
+            });
             startPolling();
           }
-
-          document.getElementById("status").textContent = response.success
-            ? `You joined as ${response.gameState.mySymbol}`
-            : response.message;
         } catch (error) {
           console.error("Join error:", error);
-          document.getElementById("status").textContent = "Error joining game";
         }
       }
 
