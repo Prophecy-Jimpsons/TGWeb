@@ -474,24 +474,27 @@
             phase: "placement",
             pieces: { O: 0, X: 0 },
             selectedPiece: null,
-            lastMove: null,
             gameEnded: false,
             winner: null,
             players: {},
-            joinTimeout: 60000,
-            placementTimeout: 60000,
-            lastActivityTime: Date.now(),
           };
-          this.lastUpdate = Date.now();
           this.isProcessingMove = false;
           this.moveQueue = [];
           this.processingQueue = false;
         }
 
-        shouldUpdate(newState) {
-          if (!newState || Date.now() - this.lastUpdate < 100) return false;
+        validateState(newState) {
+          return (
+            newState &&
+            typeof newState === "object" &&
+            Array.isArray(newState.board) &&
+            newState.board.length === 4
+          );
+        }
 
-          const relevantKeys = [
+        detectStateChanges(newState) {
+          const changes = {};
+          const keys = [
             "board",
             "currentPlayer",
             "phase",
@@ -499,75 +502,40 @@
             "gameEnded",
             "winner",
           ];
-          return relevantKeys.some(
-            (key) =>
+          keys.forEach((key) => {
+            if (
               JSON.stringify(this.state[key]) !== JSON.stringify(newState[key])
-          );
+            ) {
+              changes[key] = newState[key];
+            }
+          });
+          return changes;
         }
 
         update(newState) {
-          // Early validation
-          if (!newState || typeof newState !== "object") return;
-          if (!this.shouldUpdate(newState)) return;
+          if (!this.validateState(newState)) return;
 
-          try {
-            // Create deep copy of current state for comparison
-            const prevState = JSON.parse(JSON.stringify(this.state));
-            const currentSymbol = this.state.mySymbol;
-            const currentSelectedPiece = this.state.selectedPiece;
+          const changes = this.detectStateChanges(newState);
+          if (Object.keys(changes).length === 0) return;
 
-            // Track meaningful changes
-            const delta = {};
-            const significantKeys = [
-              "board",
-              "currentPlayer",
-              "phase",
-              "pieces",
-              "gameEnded",
-              "winner",
-              "lastMove",
-            ];
+          this.state = {
+            ...this.state,
+            ...changes,
+            mySymbol: this.state.mySymbol,
+            selectedPiece: this.state.selectedPiece,
+          };
 
-            significantKeys.forEach((key) => {
-              if (
-                JSON.stringify(prevState[key]) !== JSON.stringify(newState[key])
-              ) {
-                delta[key] = newState[key];
-              }
-            });
-
-            // Only update if there are meaningful changes
-            if (Object.keys(delta).length > 0) {
-              // Update state while preserving local properties
-              this.state = {
-                ...this.state,
-                ...newState,
-                mySymbol: currentSymbol,
-                selectedPiece: currentSelectedPiece,
-              };
-
-              // Log state changes for debugging
-              console.log("State updated:", {
-                changes: delta,
-                currentPlayer: this.state.currentPlayer,
-                mySymbol: this.state.mySymbol,
-                phase: this.state.phase,
-              });
-
-              this.lastUpdate = Date.now();
-              this.updateUI();
-            }
-          } catch (error) {
-            console.error("State update error:", error);
-          }
+          requestAnimationFrame(() => this.updateUI());
         }
 
         updateUI() {
+          const updates = new Set(["board", "status", "players", "phase"]);
           requestAnimationFrame(() => {
-            updateBoard();
-            updateStatus();
-            updatePlayerDisplay();
-            updatePhaseIndicator();
+            if (updates.has("board")) updateBoard();
+            if (updates.has("status")) updateStatus();
+            if (updates.has("players")) updatePlayerDisplay();
+            if (updates.has("phase")) updatePhaseIndicator();
+            updates.clear();
           });
         }
 
@@ -584,184 +552,40 @@
         }
 
         isValidMove(row, col) {
-          // First check if it's player's turn
-          if (!this.isValidTurn()) {
-            console.log("Turn validation failed:", {
-              mySymbol: this.state.mySymbol,
-              currentPlayer: this.state.currentPlayer,
-              phase: this.state.phase,
-            });
-            return false;
-          }
+          if (!this.isValidTurn()) return false;
 
           if (this.state.phase === "movement") {
-            // If no piece is selected and clicking own piece, allow selection of any of your pieces
             if (!this.state.selectedPiece) {
-              const isOwnPiece =
-                this.state.board[row][col] === this.state.mySymbol;
-              console.log("Piece selection validation:", {
-                position: { row, col },
-                piece: this.state.board[row][col],
-                isOwnPiece,
-              });
-              return isOwnPiece;
+              return this.state.board[row][col] === this.state.mySymbol;
             }
-
-            // If a piece is selected, allow movement to ANY empty tile
-            console.log("Movement validation:", {
-              from: this.state.selectedPiece,
-              to: { row, col },
-              targetCell: this.state.board[row][col],
-              isEmpty: this.state.board[row][col] === "",
-            });
-
-            // Only check if target tile is empty
             return this.state.board[row][col] === "";
           }
 
-          // Placement phase validation
-          const isValidPlacement =
+          return (
             this.state.board[row][col] === "" &&
-            this.state.pieces[this.state.mySymbol] < 4;
-
-          console.log("Placement validation:", {
-            position: { row, col },
-            isEmpty: this.state.board[row][col] === "",
-            piecesPlaced: this.state.pieces[this.state.mySymbol],
-            isValid: isValidPlacement,
-          });
-
-          return isValidPlacement;
-        }
-
-        async processMoveQueue() {
-          if (this.processingQueue || this.moveQueue.length === 0) return;
-
-          this.processingQueue = true;
-          while (this.moveQueue.length > 0) {
-            const move = this.moveQueue.shift();
-            try {
-              await this.processMove(move);
-            } catch (error) {
-              console.error("Move processing error:", error);
-              if (this.isValidMove(move.row, move.col)) {
-                this.moveQueue.unshift(move);
-              }
-            }
-          }
-          this.processingQueue = false;
-        }
-
-        queueMove(move) {
-          this.moveQueue.push(move);
-          this.processMoveQueue();
-        }
-
-        async processMove(move) {
-          const { row, col, type } = move;
-          let result;
-
-          try {
-            console.log("Processing move:", { row, col, type });
-
-            if (type === "placement") {
-              // Direct call to makeMove instead of handlePlacement
-              result = await makeMove(row, col);
-            } else {
-              if (!this.state.selectedPiece) {
-                this.state.selectedPiece = { row, col };
-                this.updateUI();
-                return true;
-              }
-              result = await makeMove(row, col, this.state.selectedPiece);
-              this.state.selectedPiece = null;
-            }
-
-            console.log("Move result:", result);
-
-            if (result) {
-              this.state.lastMove = [row, col];
-              this.updateUI();
-            }
-
-            return result;
-          } catch (error) {
-            console.error("Move processing error:", error);
-            return false;
-          }
+            this.state.pieces[this.state.mySymbol] < 4
+          );
         }
 
         async handleCellClick(event) {
           const row = parseInt(event.target.dataset.row);
           const col = parseInt(event.target.dataset.col);
 
-          console.log("Cell clicked:", {
-            row,
-            col,
-            phase: this.state.phase,
-            selectedPiece: this.state.selectedPiece,
-            currentPlayer: this.state.currentPlayer,
-            mySymbol: this.state.mySymbol,
-          });
-
-          // Handle movement phase
-          if (this.state.phase === "movement") {
-            // Check for deselection first, before any other validation
-            if (
-              this.state.selectedPiece &&
-              row === this.state.selectedPiece.row &&
-              col === this.state.selectedPiece.col
-            ) {
-              console.log("Deselecting piece");
-              this.state.selectedPiece = null;
-              this.updateUI();
-              return;
-            }
-
-            // Then proceed with regular move handling
-            if (!this.isValidTurn()) {
-              console.log("Not valid turn");
-              return;
-            }
-
-            await this.handleMovement(row, col);
-            return;
-          }
-
-          // Handle placement phase
-          if (!this.isValidTurn()) {
-            console.log("Not valid turn");
-            return;
-          }
-
-          if (!this.isValidMove(row, col)) {
-            console.log("Invalid move:", { row, col });
-            return;
-          }
+          if (this.isProcessingMove) return;
 
           try {
             this.isProcessingMove = true;
-            await this.processMove({ row, col, type: "placement" });
-          } catch (error) {
-            console.error("Move processing error:", error);
+            if (this.state.phase === "movement") {
+              await this.handleMovement(row, col);
+            } else if (this.isValidMove(row, col)) {
+              await this.processMove({ row, col, type: "placement" });
+            }
           } finally {
             this.isProcessingMove = false;
           }
         }
 
-        async handlePlacement(row, col) {
-          if (!this.isValidMove(row, col)) return false;
-          return await makeMove(row, col);
-        }
-
         async handleMovement(row, col) {
-          console.log("Movement phase:", {
-            selectedPiece: this.state.selectedPiece,
-            currentBoard: this.state.board[row][col],
-            mySymbol: this.state.mySymbol,
-          });
-
-          // If clicking already selected piece, deselect it
           if (
             this.state.selectedPiece &&
             row === this.state.selectedPiece.row &&
@@ -772,7 +596,6 @@
             return true;
           }
 
-          // If no piece selected and clicking own piece
           if (
             !this.state.selectedPiece &&
             this.state.board[row][col] === this.state.mySymbol
@@ -782,9 +605,13 @@
             return true;
           }
 
-          // If piece selected and target is valid
           if (this.state.selectedPiece && this.isValidMove(row, col)) {
-            const result = await makeMove(row, col, this.state.selectedPiece);
+            const result = await this.processMove({
+              row,
+              col,
+              type: "movement",
+              selectedPiece: this.state.selectedPiece,
+            });
             this.state.selectedPiece = null;
             return result;
           }
@@ -792,28 +619,38 @@
           return false;
         }
 
-        async makeMove(row, col, selectedPiece = null) {
+        async processMove(move) {
+          if (this.isProcessingMove) return false;
+
           try {
-            const response = await makeApiCall("make_move", {
-              row,
-              col,
+            this.isProcessingMove = true;
+            const moveData = {
+              row: move.row,
+              col: move.col,
+              type: move.type,
               symbol: this.state.mySymbol,
-              selectedPiece,
-              chatId: tg.initDataUnsafe.chat?.id || "default",
               userId: tg.initDataUnsafe.user?.id,
-            });
+              selectedPiece: this.state.selectedPiece,
+              chatId: tg.initDataUnsafe.chat?.id || "default",
+              phase: this.state.phase,
+            };
+
+            const response = await makeApiCall("make_move", moveData);
 
             if (response.success) {
               this.update(response.gameState);
               return true;
             }
 
-            document.getElementById("status").textContent = response.message;
+            if (response.message) {
+              document.getElementById("status").textContent = response.message;
+            }
             return false;
           } catch (error) {
-            console.error("Move error:", error);
-            document.getElementById("status").textContent = "Error making move";
+            console.error("Move processing error:", error);
             return false;
+          } finally {
+            this.isProcessingMove = false;
           }
         }
       }
