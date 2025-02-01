@@ -616,13 +616,19 @@
             return false;
           }
 
+          const userId =
+            tg.initDataUnsafe?.user?.id || localStorage.getItem("userId");
+          if (!userId) {
+            console.error("No user ID available");
+            return false;
+          }
+
           const moveData = {
             row: move.row,
             col: move.col,
             type: move.type,
             symbol: this.state.mySymbol,
-            userId:
-              tg.initDataUnsafe?.user?.id || localStorage.getItem("userId"),
+            userId: userId,
             selectedPiece:
               move.type === "movement" ? this.state.selectedPiece : null,
             chatId: tg.initDataUnsafe?.chat?.id || "default",
@@ -732,31 +738,48 @@
       }
 
       async function handleJoin() {
-        if (gameState.state.mySymbol) {
-          document.getElementById(
-            "status"
-          ).textContent = `You are already in the game as ${gameState.state.mySymbol}`;
-          return;
-        }
+        // Clear existing symbol and state first
+        gameState.reset();
 
         try {
-          const username =
-            tg.initDataUnsafe.user?.username || (await getUserName());
-          const response = await makeApiCall("join_game", { username });
+          let username;
+          let userId;
+
+          // Handle Telegram user data
+          if (tg.initDataUnsafe?.user) {
+            username = tg.initDataUnsafe.user.username;
+            userId = tg.initDataUnsafe.user.id;
+            console.log("Telegram user data:", { username, userId });
+          } else {
+            username = await getUserName();
+            userId = Date.now().toString(); // Generate temporary ID for non-Telegram users
+            console.log("Manual user data:", { username, userId });
+          }
+
+          // Store userId for future reference
+          localStorage.setItem("userId", userId);
+
+          const response = await makeApiCall("join_game", {
+            username,
+            userId,
+            chatId: tg.initDataUnsafe?.chat?.id || "default",
+          });
 
           if (response.success && response.gameState) {
-            // Store the original symbol assignment
-            const assignedSymbol = response.gameState.mySymbol;
-            gameState.state.mySymbol = assignedSymbol;
+            gameState.state.mySymbol = response.gameState.mySymbol;
             gameState.update(response.gameState);
-
-            // Save the player's symbol in localStorage for persistence
-            localStorage.setItem("playerSymbol", assignedSymbol);
-
             startPolling();
+
+            document.getElementById(
+              "status"
+            ).textContent = `You joined as ${response.gameState.mySymbol}`;
+          } else {
+            document.getElementById("status").textContent =
+              response.message || "Failed to join game";
           }
         } catch (error) {
           console.error("Join error:", error);
+          document.getElementById("status").textContent = "Error joining game";
         }
       }
 
