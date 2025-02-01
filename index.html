@@ -350,13 +350,6 @@
       const MAX_RETRIES = 3;
       let isPolling = false;
 
-      // Cache for storing game state
-      const stateCache = {
-        lastFullState: null,
-        lastUpdateTime: 0,
-        CACHE_DURATION: 5000, // 5 seconds
-      };
-
       // Debounce function for handling rapid state updates
       function debounce(func, wait) {
         let timeout;
@@ -380,19 +373,6 @@
             setTimeout(() => (inThrottle = false), limit);
           }
         };
-      }
-
-      async function checkGameState() {
-        try {
-          const response = await makeApiCall("get_game_state", {});
-          if (response.success) {
-            handleStateUpdate(response.gameState);
-          }
-        } catch (error) {
-          console.error("State check error:", error);
-          document.getElementById("status").textContent =
-            "Connection error, retrying...";
-        }
       }
 
       // Replace current polling implementation with
@@ -474,10 +454,14 @@
         }
 
         updateUI() {
-          updateBoard();
-          updateStatus();
-          updatePlayerDisplay();
-          updatePhaseIndicator();
+          const updates = new Set();
+          requestAnimationFrame(() => {
+            if (updates.has("board")) updateBoard();
+            if (updates.has("status")) updateStatus();
+            if (updates.has("players")) updatePlayerDisplay();
+            if (updates.has("phase")) updatePhaseIndicator();
+            updates.clear();
+          });
         }
 
         isValidTurn() {
@@ -589,6 +573,20 @@
 
       const gameState = new GameState();
 
+      async function recoverGameState() {
+        try {
+          const response = await makeApiCall("get_game_state", {});
+          if (response.success) {
+            gameState.update(response.gameState);
+            return true;
+          }
+          return false;
+        } catch (error) {
+          console.error("Recovery failed:", error);
+          return false;
+        }
+      }
+
       // API handling with retry logic and caching
       async function makeApiCall(endpoint, data, retries = 3) {
         try {
@@ -624,28 +622,7 @@
         }
       }
 
-      // Efficient polling with throttling
-      const throttledGameStateCheck = throttle(async () => {
-        try {
-          const response = await makeApiCall("get_game_state", {});
-          if (response.success) {
-            handleStateUpdate(response.gameState);
-          }
-        } catch (error) {
-          console.error("State check error:", error);
-          document.getElementById("status").textContent =
-            "Connection error, retrying...";
-        }
-      }, POLLING_INTERVAL);
-
-      async function checkGameStatus() {
-        if (Date.now() - lastStateUpdate >= POLLING_INTERVAL) {
-          await throttledGameStateCheck();
-        }
-      }
-
       async function handleJoin() {
-        // First check local state
         if (gameState.state.mySymbol) {
           document.getElementById(
             "status"
@@ -654,24 +631,18 @@
         }
 
         try {
-          const response = await makeApiCall("join_game", {
-            username: tg.initDataUnsafe.user?.username || "Player",
-          });
-
-          if (response.isAlreadyJoined) {
-            document.getElementById("status").textContent = response.message;
-            return;
-          }
+          const username =
+            tg.initDataUnsafe.user?.username || (await getUserName());
+          const response = await makeApiCall("join_game", { username });
 
           if (response.success) {
             gameState.state.mySymbol = response.gameState.mySymbol;
             gameState.update(response.gameState);
-            document.getElementById(
-              "status"
-            ).textContent = `You joined as ${response.gameState.mySymbol}`;
-          } else {
-            document.getElementById("status").textContent = response.message;
+            startPolling(); // Start polling only after successful join
           }
+          document.getElementById("status").textContent = response.success
+            ? `You joined as ${response.gameState.mySymbol}`
+            : response.message;
         } catch (error) {
           console.error("Join error:", error);
           document.getElementById("status").textContent = "Error joining game";
@@ -910,18 +881,27 @@
         });
       }
 
+      // Add cleanup for event listeners in initializeGame
       function initializeGame() {
         const board = document.getElementById("game-board");
-        board.innerHTML = "";
+        const cleanupListeners = [];
 
+        board.innerHTML = "";
         const fragment = document.createDocumentFragment();
+
         for (let i = 0; i < 4; i++) {
           for (let j = 0; j < 4; j++) {
             const cell = document.createElement("div");
             cell.className = "cell";
             cell.dataset.row = i;
             cell.dataset.col = j;
-            cell.addEventListener("click", (e) => gameState.handleCellClick(e));
+
+            const handler = (e) => gameState.handleCellClick(e);
+            cell.addEventListener("click", handler);
+            cleanupListeners.push(() =>
+              cell.removeEventListener("click", handler)
+            );
+
             fragment.appendChild(cell);
           }
         }
@@ -929,7 +909,6 @@
 
         tg.ready();
         tg.expand();
-        startPolling();
       }
 
       // Event Listeners
