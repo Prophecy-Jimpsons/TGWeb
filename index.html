@@ -465,71 +465,57 @@
         }
 
         isValidTurn() {
-          console.log("Turn validation:", {
-            mySymbol: this.state.mySymbol,
-            currentPlayer: this.state.currentPlayer,
-            gameEnded: this.state.gameEnded,
-            processing: this.isProcessingMove,
-            pieces: this.state.pieces[this.state.mySymbol],
-          });
-
+          // Remove processing check from here as it's handled in handleCellClick
           return (
             this.state.mySymbol &&
             this.state.currentPlayer === this.state.mySymbol &&
-            !this.state.gameEnded &&
-            !this.isProcessingMove
+            !this.state.gameEnded
           );
         }
 
         isValidMove(row, col) {
+          if (!this.isValidTurn()) return false;
+
           const validation = {
             isValidTurn: this.isValidTurn(),
             isEmpty: this.state.board[row][col] === "",
             piecesCount: this.state.pieces[this.state.mySymbol],
             phase: this.state.phase,
           };
-          console.log("Move validation:", validation);
 
-          if (!validation.isValidTurn) return false;
-
-          if (this.state.phase === "movement") {
-            // movement logic
+          if (this.state.phase === "placement") {
+            return validation.isEmpty && validation.piecesCount < 4;
           }
-          return validation.isEmpty && validation.piecesCount < 4;
+
+          // Movement phase logic
+          if (!this.state.selectedPiece) {
+            return this.state.board[row][col] === this.state.mySymbol;
+          }
+          return validation.isEmpty;
         }
 
         async handleCellClick(event) {
           const row = parseInt(event.target.dataset.row);
           const col = parseInt(event.target.dataset.col);
 
-          console.log("Cell clicked:", {
-            row,
-            col,
-            phase: this.state.phase,
-            selectedPiece: this.state.selectedPiece,
-            currentPlayer: this.state.currentPlayer,
-            mySymbol: this.state.mySymbol,
-          });
-
-          if (this.isProcessingMove) {
-            console.log("Move already processing, returning");
+          // Move validation should happen BEFORE setting processing lock
+          if (!this.isValidMove(row, col)) {
+            console.log("Invalid move:", {
+              isValidTurn: this.isValidTurn(),
+              board: this.state.board[row][col],
+              pieces: this.state.pieces[this.state.mySymbol],
+            });
             return;
           }
 
+          if (this.isProcessingMove) return;
+
           try {
             this.isProcessingMove = true;
-
             if (this.state.phase === "movement") {
               await this.handleMovement(row, col);
-            } else if (this.isValidMove(row, col)) {
-              console.log("Valid placement move, processing...");
-              await this.processMove({ row, col, type: "placement" });
             } else {
-              console.log("Invalid move:", {
-                isValidTurn: this.isValidTurn(),
-                board: this.state.board[row][col],
-                pieces: this.state.pieces[this.state.mySymbol],
-              });
+              await this.processMove({ row, col, type: "placement" });
             }
           } finally {
             this.isProcessingMove = false;
