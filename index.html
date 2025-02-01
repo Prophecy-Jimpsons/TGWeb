@@ -345,6 +345,16 @@
       const API_URL = "https://pjimpsons.pythonanywhere.com";
       const updateQueue = new Set();
       let lastStateUpdate = Date.now();
+      const moveData = {
+        row: move.row,
+        col: move.col,
+        type: move.type,
+        symbol: this.state.mySymbol,
+        userId: tg.initDataUnsafe.user?.id,
+        selectedPiece: this.state.selectedPiece,
+        chatId: tg.initDataUnsafe.chat?.id || "default",
+      };
+
       const POLLING_INTERVAL = 1000; // 1 second
       const RETRY_INTERVAL = 2000; // 2 seconds
       let retryCount = 0;
@@ -723,6 +733,12 @@
 
         async processMove(move) {
           if (this.isProcessingMove) return false;
+
+          if (this.state.phase === "movement" && !this.state.selectedPiece) {
+            document.getElementById("status").textContent =
+              "Select a piece first";
+            return false;
+          }
 
           try {
             this.isProcessingMove = true;
