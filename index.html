@@ -523,32 +523,32 @@
             return false;
           }
 
-          // In movement phase
+          // For movement phase
           if (this.state.phase === "movement") {
-            // Trying to select a piece
-            if (!this.state.selectedPiece) {
-              const isOwnPiece =
-                this.state.board[row][col] === this.state.mySymbol;
-              console.log("Selecting piece:", { row, col, isOwnPiece });
-              return isOwnPiece;
+            // If clicking on own piece, always valid for selection/deselection
+            if (this.state.board[row][col] === this.state.mySymbol) {
+              console.log("Valid piece selection");
+              return true;
             }
 
-            // Trying to move a selected piece
-            const isEmpty = this.state.board[row][col] === "";
-            console.log("Moving piece:", {
-              from: this.state.selectedPiece,
-              to: { row, col },
-              isEmpty,
+            // If we have a piece selected and target is empty, valid for movement
+            if (this.state.selectedPiece && this.state.board[row][col] === "") {
+              console.log("Valid movement target");
+              return true;
+            }
+
+            console.log("Invalid movement:", {
+              hasSelectedPiece: Boolean(this.state.selectedPiece),
+              targetCell: this.state.board[row][col],
             });
-            return isEmpty;
+            return false;
           }
 
-          // In placement phase
-          const validation = {
-            isEmpty: this.state.board[row][col] === "",
-            piecesCount: this.state.pieces[this.state.mySymbol],
-          };
-          return validation.isEmpty && validation.piecesCount < 4;
+          // For placement phase
+          return (
+            this.state.board[row][col] === "" &&
+            this.state.pieces[this.state.mySymbol] < 4
+          );
         }
 
         async handleCellClick(event) {
@@ -588,38 +588,35 @@
         }
 
         async handleMovement(row, col) {
+          const targetCell = this.state.board[row][col];
           console.log("Handle movement:", {
             selectedPiece: this.state.selectedPiece,
-            targetCell: { row, col },
-            boardState: this.state.board[row][col],
+            targetCell: targetCell,
+            isOwnPiece: targetCell === this.state.mySymbol,
           });
 
-          // Clicking the same piece - deselect
-          if (
-            this.state.selectedPiece &&
-            row === this.state.selectedPiece.row &&
-            col === this.state.selectedPiece.col
-          ) {
-            console.log("Deselecting piece");
-            this.state.selectedPiece = null;
+          // Case 1: Clicking on own piece
+          if (targetCell === this.state.mySymbol) {
+            // If same piece is already selected, deselect it
+            if (
+              this.state.selectedPiece &&
+              row === this.state.selectedPiece.row &&
+              col === this.state.selectedPiece.col
+            ) {
+              console.log("Deselecting piece");
+              this.state.selectedPiece = null;
+            } else {
+              // Select new piece
+              console.log("Selecting new piece");
+              this.state.selectedPiece = { row, col };
+            }
             this.updateUI();
             return true;
           }
 
-          // No piece selected - try to select
-          if (!this.state.selectedPiece) {
-            if (this.state.board[row][col] === this.state.mySymbol) {
-              console.log("Selecting piece");
-              this.state.selectedPiece = { row, col };
-              this.updateUI();
-              return true;
-            }
-            return false;
-          }
-
-          // Moving piece - validate target cell
-          if (this.state.board[row][col] === "") {
-            console.log("Moving piece");
+          // Case 2: Have selected piece and clicking empty cell
+          if (this.state.selectedPiece && targetCell === "") {
+            console.log("Attempting move to empty cell");
             const result = await this.processMove({
               row,
               col,
@@ -627,9 +624,11 @@
               selectedPiece: this.state.selectedPiece,
             });
             this.state.selectedPiece = null;
+            this.updateUI();
             return result;
           }
 
+          console.log("Invalid movement attempt");
           return false;
         }
 
