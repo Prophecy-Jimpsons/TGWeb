@@ -696,6 +696,7 @@
 
           if (response.success) {
             const gameState = response.gameState;
+            console.log("game state is" + gameState);
             this.state.mySymbol = gameState.state.mySymbol;
             this.state.currentPlayer = gameState.currentPlayer;
             this.update(gameState);
