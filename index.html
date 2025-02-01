@@ -477,21 +477,39 @@
         }
 
         isValidMove(row, col) {
-          if (!this.isValidTurn()) return false;
+          const validation = {
+            isValidTurn: this.isValidTurn(),
+            isEmpty: this.state.board[row][col] === "",
+            piecesCount: this.state.pieces[this.state.mySymbol],
+            phase: this.state.phase,
+          };
+          console.log("Move validation:", validation);
+
+          if (!validation.isValidTurn) return false;
+
           if (this.state.phase === "movement") {
             // movement logic
           }
-          return (
-            this.state.board[row][col] === "" &&
-            this.state.pieces[this.state.mySymbol] < 4
-          );
+          return validation.isEmpty && validation.piecesCount < 4;
         }
 
         async handleCellClick(event) {
           const row = parseInt(event.target.dataset.row);
           const col = parseInt(event.target.dataset.col);
 
-          if (this.isProcessingMove) return;
+          console.log("Cell clicked:", {
+            row,
+            col,
+            phase: this.state.phase,
+            selectedPiece: this.state.selectedPiece,
+            currentPlayer: this.state.currentPlayer,
+            mySymbol: this.state.mySymbol,
+          });
+
+          if (this.isProcessingMove) {
+            console.log("Move already processing, returning");
+            return;
+          }
 
           try {
             this.isProcessingMove = true;
@@ -499,7 +517,14 @@
             if (this.state.phase === "movement") {
               await this.handleMovement(row, col);
             } else if (this.isValidMove(row, col)) {
+              console.log("Valid placement move, processing...");
               await this.processMove({ row, col, type: "placement" });
+            } else {
+              console.log("Invalid move:", {
+                isValidTurn: this.isValidTurn(),
+                board: this.state.board[row][col],
+                pieces: this.state.pieces[this.state.mySymbol],
+              });
             }
           } finally {
             this.isProcessingMove = false;
@@ -551,6 +576,23 @@
             chatId: tg.initDataUnsafe.chat?.id || "default",
             phase: this.state.phase,
           };
+
+          console.log("Processing move:", moveData);
+
+          const response = await makeApiCall("make_move", moveData);
+          console.log("Move API response:", response);
+
+          if (response.success) {
+            console.log("Move successful, updating state");
+            this.update(response.gameState);
+            return true;
+          }
+
+          if (response.message) {
+            console.log("Move failed:", response.message);
+            document.getElementById("status").textContent = response.message;
+          }
+          return false;
         }
       }
 
@@ -572,6 +614,7 @@
 
       // API handling with retry logic and caching
       async function makeApiCall(endpoint, data, retries = 3) {
+        console.log(`API Call to ${endpoint}:`, data);
         try {
           const response = await fetch(`${API_URL}/${endpoint}`, {
             method: "POST",
@@ -583,24 +626,11 @@
               timestamp: Date.now(),
             }),
           });
-
           const result = await response.json();
-
-          // Handle "already in game" as a special case
-          if (
-            result.message &&
-            result.message.includes("already in the game")
-          ) {
-            return {
-              success: false,
-              isAlreadyJoined: true,
-              message: result.message,
-            };
-          }
-
+          console.log(`API Response from ${endpoint}:`, result);
           return result;
         } catch (error) {
-          console.error("API call error:", error);
+          console.error(`API Error for ${endpoint}:`, error);
           throw error;
         }
       }
