@@ -436,19 +436,17 @@
         }
 
         update(newState) {
-          if (!this.validateState(newState)) {
-            console.error("Invalid state update:", newState);
-            return;
-          }
+          if (!this.validateState(newState)) return;
 
-          const currentSymbol = this.state.mySymbol;
-          const currentSelectedPiece = this.state.selectedPiece;
+          // Get the original assigned symbol
+          const originalSymbol =
+            localStorage.getItem("playerSymbol") || this.state.mySymbol;
 
           this.state = {
             ...this.state,
             ...newState,
-            mySymbol: currentSymbol || newState.mySymbol,
-            selectedPiece: currentSelectedPiece,
+            mySymbol: originalSymbol, // Always use the original symbol
+            selectedPiece: this.state.selectedPiece,
           };
 
           console.log("State updated:", {
@@ -458,7 +456,7 @@
             pieces: this.state.pieces,
           });
 
-          this.updateUI();
+          requestAnimationFrame(() => this.updateUI());
         }
 
         updateUI() {
@@ -722,14 +720,14 @@
           const response = await makeApiCall("join_game", { username });
 
           if (response.success && response.gameState) {
-            // Set mySymbol first
-            gameState.state.mySymbol = response.gameState.mySymbol;
-            // Then update full state
+            // Store the original symbol assignment
+            const assignedSymbol = response.gameState.mySymbol;
+            gameState.state.mySymbol = assignedSymbol;
             gameState.update(response.gameState);
-            console.log("Joined game:", {
-              mySymbol: gameState.state.mySymbol,
-              currentPlayer: gameState.state.currentPlayer,
-            });
+
+            // Save the player's symbol in localStorage for persistence
+            localStorage.setItem("playerSymbol", assignedSymbol);
+
             startPolling();
           }
         } catch (error) {
