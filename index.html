@@ -478,14 +478,9 @@
 
         isValidMove(row, col) {
           if (!this.isValidTurn()) return false;
-
           if (this.state.phase === "movement") {
-            if (!this.state.selectedPiece) {
-              return this.state.board[row][col] === this.state.mySymbol;
-            }
-            return this.state.board[row][col] === "";
+            // movement logic
           }
-
           return (
             this.state.board[row][col] === "" &&
             this.state.pieces[this.state.mySymbol] < 4
@@ -556,18 +551,6 @@
             chatId: tg.initDataUnsafe.chat?.id || "default",
             phase: this.state.phase,
           };
-
-          const response = await makeApiCall("make_move", moveData);
-
-          if (response.success) {
-            this.update(response.gameState);
-            return true;
-          }
-
-          if (response.message) {
-            document.getElementById("status").textContent = response.message;
-          }
-          return false;
         }
       }
 
