@@ -696,7 +696,7 @@
 
           if (response.success) {
             const gameState = response.gameState;
-            this.state.mySymbol = gameState.mySymbol;
+            this.state.mySymbol = gameState.state.mySymbol;
             this.state.currentPlayer = gameState.currentPlayer;
             this.update(gameState);
             startPolling();
