@@ -465,14 +465,19 @@
         }
 
         isValidTurn() {
+          console.log("Turn validation:", {
+            mySymbol: this.state.mySymbol,
+            currentPlayer: this.state.currentPlayer,
+            gameEnded: this.state.gameEnded,
+            processing: this.isProcessingMove,
+            pieces: this.state.pieces[this.state.mySymbol],
+          });
+
           return (
             this.state.mySymbol &&
             this.state.currentPlayer === this.state.mySymbol &&
             !this.state.gameEnded &&
-            !this.isProcessingMove &&
-            (this.state.phase === "placement"
-              ? this.state.pieces[this.state.mySymbol] < 4
-              : true)
+            !this.isProcessingMove
           );
         }
 
@@ -690,10 +695,13 @@
           const response = await makeApiCall("join_game", { username });
 
           if (response.success) {
-            gameState.state.mySymbol = response.gameState.mySymbol;
-            gameState.update(response.gameState);
-            startPolling(); // Start polling only after successful join
+            const gameState = response.gameState;
+            this.state.mySymbol = gameState.mySymbol;
+            this.state.currentPlayer = gameState.currentPlayer;
+            this.update(gameState);
+            startPolling();
           }
+
           document.getElementById("status").textContent = response.success
             ? `You joined as ${response.gameState.mySymbol}`
             : response.message;
