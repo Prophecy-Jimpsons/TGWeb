@@ -427,6 +427,7 @@
         }
 
         reset() {
+          localStorage.removeItem("playerSymbol");
           this.state = {
             board: Array(4)
               .fill()
@@ -441,7 +442,7 @@
             players: {},
           };
           this.isProcessingMove = false;
-          localStorage.removeItem("playerSymbol");
+          stopPolling();
         }
 
         validateState(newState) {
@@ -468,10 +469,6 @@
             mySymbol: currentSymbol || newState.mySymbol,
             selectedPiece: currentSelectedPiece,
           };
-
-          if (this.state.mySymbol) {
-            localStorage.setItem("playerSymbol", this.state.mySymbol);
-          }
 
           console.log("State updated:", {
             mySymbol: this.state.mySymbol,
@@ -624,7 +621,8 @@
             col: move.col,
             type: move.type,
             symbol: this.state.mySymbol,
-            userId: tg.initDataUnsafe?.user?.id,
+            userId:
+              tg.initDataUnsafe?.user?.id || localStorage.getItem("userId"),
             selectedPiece:
               move.type === "movement" ? this.state.selectedPiece : null,
             chatId: tg.initDataUnsafe?.chat?.id || "default",
