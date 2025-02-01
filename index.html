@@ -460,21 +460,20 @@
             return;
           }
 
-          const currentSymbol = this.state.mySymbol;
-          const currentSelectedPiece = this.state.selectedPiece;
+          // Get the stored symbol
+          const storedSymbol = localStorage.getItem("playerSymbol");
 
           this.state = {
             ...this.state,
             ...newState,
-            mySymbol: currentSymbol || newState.mySymbol,
-            selectedPiece: currentSelectedPiece,
+            // Preserve symbol in this priority: stored > current > new
+            mySymbol: storedSymbol || this.state.mySymbol || newState.mySymbol,
           };
 
-          console.log("State updated:", {
-            mySymbol: this.state.mySymbol,
-            currentPlayer: this.state.currentPlayer,
-            phase: this.state.phase,
-            pieces: this.state.pieces,
+          console.log("State after update:", {
+            storedSymbol,
+            currentSymbol: this.state.mySymbol,
+            newSymbol: newState.mySymbol,
           });
 
           this.updateUI();
@@ -519,27 +518,36 @@
         }
 
         isValidMove(row, col) {
-          if (!this.isValidTurn()) return false;
+          if (!this.isValidTurn()) {
+            console.log("Turn validation failed");
+            return false;
+          }
 
+          // In movement phase
+          if (this.state.phase === "movement") {
+            // Trying to select a piece
+            if (!this.state.selectedPiece) {
+              const isOwnPiece =
+                this.state.board[row][col] === this.state.mySymbol;
+              console.log("Selecting piece:", { row, col, isOwnPiece });
+              return isOwnPiece;
+            }
+
+            // Trying to move a selected piece
+            const isEmpty = this.state.board[row][col] === "";
+            console.log("Moving piece:", {
+              from: this.state.selectedPiece,
+              to: { row, col },
+              isEmpty,
+            });
+            return isEmpty;
+          }
+
+          // In placement phase
           const validation = {
             isEmpty: this.state.board[row][col] === "",
             piecesCount: this.state.pieces[this.state.mySymbol],
-            phase: this.state.phase,
-            isOwnPiece: this.state.board[row][col] === this.state.mySymbol,
           };
-
-          console.log("Move validation:", validation);
-
-          if (this.state.phase === "movement") {
-            // If no piece is selected, allow selecting own piece
-            if (!this.state.selectedPiece) {
-              return validation.isOwnPiece;
-            }
-            // If piece is selected, only allow moving to empty cells
-            return validation.isEmpty;
-          }
-
-          // Placement phase logic
           return validation.isEmpty && validation.piecesCount < 4;
         }
 
@@ -580,39 +588,45 @@
         }
 
         async handleMovement(row, col) {
-          // Handle deselection - if clicking the same piece that's already selected
+          console.log("Handle movement:", {
+            selectedPiece: this.state.selectedPiece,
+            targetCell: { row, col },
+            currentBoard: this.state.board[row][col],
+          });
+
+          // Clicking the same piece that's selected - deselect it
           if (
             this.state.selectedPiece &&
             row === this.state.selectedPiece.row &&
             col === this.state.selectedPiece.col
           ) {
+            console.log("Deselecting piece");
             this.state.selectedPiece = null;
             this.updateUI();
             return true;
           }
 
-          // Handle new piece selection
+          // No piece selected and clicking own piece - select it
           if (
             !this.state.selectedPiece &&
             this.state.board[row][col] === this.state.mySymbol
           ) {
+            console.log("Selecting new piece");
             this.state.selectedPiece = { row, col };
             this.updateUI();
             return true;
           }
 
-          // Handle movement of selected piece
-          if (this.state.selectedPiece && this.isValidMove(row, col)) {
+          // Have selected piece and clicking empty cell - try to move
+          if (this.state.selectedPiece && this.state.board[row][col] === "") {
+            console.log("Attempting move");
             const result = await this.processMove({
               row,
               col,
               type: "movement",
               selectedPiece: this.state.selectedPiece,
             });
-
-            // Clear selection after move attempt, regardless of success
             this.state.selectedPiece = null;
-            this.updateUI();
             return result;
           }
 
