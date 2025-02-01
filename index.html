@@ -345,15 +345,6 @@
       const API_URL = "https://pjimpsons.pythonanywhere.com";
       const updateQueue = new Set();
       let lastStateUpdate = Date.now();
-      const moveData = {
-        row: move.row,
-        col: move.col,
-        type: move.type,
-        symbol: this.state.mySymbol,
-        userId: tg.initDataUnsafe.user?.id,
-        selectedPiece: this.state.selectedPiece,
-        chatId: tg.initDataUnsafe.chat?.id || "default",
-      };
 
       const POLLING_INTERVAL = 1000; // 1 second
       const RETRY_INTERVAL = 2000; // 2 seconds
@@ -742,6 +733,15 @@
 
           try {
             this.isProcessingMove = true;
+            const moveData = {
+              row: move.row,
+              col: move.col,
+              type: move.type,
+              symbol: this.state.mySymbol,
+              userId: tg.initDataUnsafe.user?.id,
+              selectedPiece: this.state.selectedPiece,
+              chatId: tg.initDataUnsafe.chat?.id || "default",
+            };
             const response = await makeApiCall("make_move", {
               row: move.row,
               col: move.col,
