@@ -525,6 +525,7 @@
             isEmpty: this.state.board[row][col] === "",
             piecesCount: this.state.pieces[this.state.mySymbol],
             phase: this.state.phase,
+            isOwnPiece: this.state.board[row][col] === this.state.mySymbol,
           };
 
           console.log("Move validation:", validation);
@@ -532,7 +533,7 @@
           if (this.state.phase === "movement") {
             // If no piece is selected, allow selecting own piece
             if (!this.state.selectedPiece) {
-              return this.state.board[row][col] === this.state.mySymbol;
+              return validation.isOwnPiece;
             }
             // If piece is selected, only allow moving to empty cells
             return validation.isEmpty;
