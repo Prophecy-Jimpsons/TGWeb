@@ -529,15 +529,17 @@
 
           console.log("Move validation:", validation);
 
-          if (this.state.phase === "placement") {
-            return validation.isEmpty && validation.piecesCount < 4;
+          if (this.state.phase === "movement") {
+            // If no piece is selected, allow selecting own piece
+            if (!this.state.selectedPiece) {
+              return this.state.board[row][col] === this.state.mySymbol;
+            }
+            // If piece is selected, only allow moving to empty cells
+            return validation.isEmpty;
           }
 
-          if (!this.state.selectedPiece) {
-            return this.state.board[row][col] === this.state.mySymbol;
-          }
-
-          return validation.isEmpty;
+          // Placement phase logic
+          return validation.isEmpty && validation.piecesCount < 4;
         }
 
         async handleCellClick(event) {
