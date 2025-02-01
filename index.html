@@ -703,7 +703,7 @@
           }
 
           document.getElementById("status").textContent = response.success
-            ? `You joined as ${response.gameState.mySymbol}`
+            ? `You joined as ${response.gameState.state.mySymbol}`
             : response.message;
         } catch (error) {
           console.error("Join error:", error);
